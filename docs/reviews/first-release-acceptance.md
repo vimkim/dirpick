@@ -2,9 +2,9 @@
 
 This record checks the implementation against [spec #1](https://github.com/vimkim/dirpick/issues/1)
 and [release ticket #7](https://github.com/vimkim/dirpick/issues/7).
-The implementation candidate is `57c8399ec188aa0edae6ad9a69fd913e5dc096ca` on
+The implementation candidate is `1d24a085cdcfe5e2cf3e3cf5103f833ad54bdfed` on
 `ticket/7-release`, based on integration commit `338b6dd`.
-The final evidence commit changes documentation and test formatting only.
+The final evidence commit changes documentation only.
 
 Automated acceptance checks passed on Linux x86_64 on 2026-10-16.
 The final independent code review is **pending**. The parent workflow will run
@@ -28,7 +28,7 @@ python3 -B scripts/dependency_notices.py --check
 cargo package --list --locked --allow-dirty
 ```
 
-All 47 Rust integration tests passed, including five real PTY entry points.
+All 48 Rust integration tests passed, including five real PTY entry points.
 The PTY suites use semantic text, exact action bytes, child argv, process exit,
 and terminal flags. They do not compare screenshot pixels or private helpers.
 The package listing contains the Nu integration, syntax notices, dependency
@@ -60,7 +60,7 @@ checkout was necessary for runtime data.
 | Fuzzy ranking, smart case, relative filters, and ignore rules | `session.rs` and `filtering.rs` cover ranking, include/exclude precedence, invalid-pattern recovery, parent ignore rules, independent Hidden/Ignored, Git metadata, and skipped symlinks. |
 | Files, Directories, and Contents share settings | `directories.rs`, `contents.rs`, and the combined PTY journey retain fields, scope, Regex, Hidden, and Ignored across mode changes. |
 | Browsing and history restore selection and preview | Application tests restore path and line identity, preview position, and prior mode/settings. Vanished selections produce feedback. PTYs browse, alter state, and restore the directory selection and child-preview position. |
-| Source and directory previews | `preview_actions.rs` checks syntax context, unknown syntax, unsupported files, control-character fidelity, and bounded scrolling. Directory tests verify immediate children under the active visibility rules. |
+| Source and directory previews | `preview_actions.rs` checks syntax context, unknown syntax, unsupported files, control-character fidelity, and bounded scrolling. Session tests center a content match within the reported viewport and keep it visible when the byte budget reduces available context. Manual scrolling and its history survive resizing. Directory tests verify immediate children under the active visibility rules. |
 | Literal and regex content matching | `contents.rs` checks smart case, every match span, zero-width regexes, grouped line identity, nearby preview context, and unsupported source files. |
 | Responsive, bounded, and honest search | Session tests deliver obsolete generations deliberately and verify rejection. Fixtures exercise entry, retained-path, matching-line, file-size, and memory limits. At 70×18, PTYs exercise 5,000 retained lines and the 16 MiB memory guard. PARTIAL and F12 remain visible after a copy action. |
 | Exact clipboard transport | Application tests verify exact OSC 52 bytes, failed writes/flushes, unsupported UTF-8 transport, and retained state. PTYs decode file and directory payloads containing Unicode, quotes, whitespace, and newlines. |
@@ -73,7 +73,7 @@ checkout was necessary for runtime data.
 
 ## Defects corrected during acceptance
 
-Three behavioral regressions first failed at the approved real PTY boundary:
+Five behavioral regressions first failed at the approved real PTY boundary:
 
 1. Below the supported size, F12 changed help state but the resize screen hid help.
    The undersize screen now shows basic help and working close/exit guidance.
@@ -82,6 +82,12 @@ Three behavioral regressions first failed at the approved real PTY boundary:
    scrollable feedback when the footer clips a long message.
 3. A failed editor could leave raw flags that Crossterm captured as its next original modes.
    Dirpick now retains launch terminal modes across child handoffs and final cleanup.
+4. A long field containing a joined emoji could hide the text next to its cursor.
+   Horizontal scrolling now measures whole graphemes with their terminal display widths.
+5. Fixed preview context could hide the selected content line in a short pane.
+   The session now centers selections using the visible row count. It retains
+   independent scrolling and restores that behavior through history. A bounded
+   window with insufficient context begins at the selected line.
 
 The combined workflows and existing application tests pass with these fixes.
 The prototype remains outside the implementation branch. Production searches and
