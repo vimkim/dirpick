@@ -82,6 +82,25 @@ the Contents query's Regex toggle.
   shell integration.
 - Copy keeps Dirpick open.
 
+## Layout prototype
+
+The user requested design prototypes after accepting the matching, filter,
+and action contracts. The self-contained browser study is preserved on local
+branch `prototype/search-layouts`, commit `ed6eb3a`, at
+`prototypes/search-layouts.html`.
+Its current checkout is `/home/vimkim/gh/dirpick-prototype`.
+
+It compares a compact flat picker (A), a grouped content workbench (B), and a
+directory tree (C), all with the accepted search controls above results and
+preview. Sample search, filtering, selection, scope history, and simulated
+editor/copy/cd actions are interactive. No winning layout has been selected.
+
+The prototype proposes shared mode-switch state and a stacked narrow layout;
+these have not been accepted yet. Its browser checks do not establish real
+terminal key handling or restoration. Keep the prototype code off the main
+branch; carry the selected design into the implementation spec. Add a pointer
+to the prototype branch and path when implementation tickets are created.
+
 ## Decisions still open
 
 - The order of complete workflows within the agreed release.
