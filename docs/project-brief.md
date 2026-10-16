@@ -4,8 +4,8 @@ Dirpick is a standalone Rust terminal application for filesystem navigation,
 search, filtering, and previews. Its command is `dirpick`.
 
 This brief preserves the agreed direction from the project handoff and the
-subsequent design interview. It records accepted choices; remaining details
-need agreement before the implementation spec is written.
+subsequent design interview. It records accepted product choices. Engineering
+defaults and the proposed test boundary will be made concrete in the spec draft.
 
 ## Settled project choices
 
@@ -52,7 +52,8 @@ Mode, scope, query, include, and exclude controls stay visible above side-by-sid
 results and preview. Tab moves between fields. Current settings remain visible.
 Use Workbench (B) as the preferred layout: group content matches by file,
 with the search controls on the left and scope and path filters on the right.
-Narrow-terminal behavior and the remaining keybindings are still open.
+On narrow terminals, switch between Results and Preview panes. Keep the active
+search settings visible; final focus and selection keys will be in the spec.
 The user accepted the native terminal design; the earlier browser mockups did
 not look sufficiently like a TUI.
 
@@ -78,7 +79,9 @@ setting, then refreshes results and resets selection. Back restores the previous
 scope and search. Browsing or manually applying another scope remains available;
 show Custom when it matches neither preset. The prototype uses F7 for the toggle.
 
-Enumeration, limits, ranking, and empty-query behavior remain open.
+An empty Files or Directories query enumerates recursive paths. An empty
+Contents query shows guidance. Ranking and operational limits will be made
+concrete in the spec draft.
 
 ### Query matching
 
@@ -93,6 +96,27 @@ the search scope, across all three modes. Exclusion wins when both match.
 For example, `\.rs$` includes Rust files and `(^|/)tests(/|$)` excludes a
 tests directory and its descendants. These filters operate independently of
 the Contents query's Regex toggle.
+
+### Traversal
+
+Respect `.gitignore`, `.ignore`, and `.rgignore` rules by default. Hidden entries
+are off by default. Provide separate visible toggles for hidden and ignored
+entries, while keeping `.git` metadata excluded. Recursive search does not
+follow symlinks.
+
+### Shared search state
+
+Mode changes keep the query, scope, include/exclude filters, and Regex setting.
+The Regex setting applies to Contents queries only. Scope preset changes also
+keep these settings; directory browsing and manual scope application clear the
+query as specified above. Recompute results after each change.
+
+### Shell and clipboard
+
+Support Nushell integration first. The shell adapter changes the invoking
+shell's directory after an explicit cd & exit action. Copy sends the selected
+absolute path through OSC 52, matching the existing SSH clipboard setup.
+Copy keeps Dirpick open. Bash and Zsh adapters can follow in a later release.
 
 ### Actions and restoration
 
@@ -114,7 +138,7 @@ The current study is a native Rust TUI on local branch `prototype/search-layouts
 commit `e49d91b`, with entry point `prototypes/terminal/Cargo.toml`.
 Its checkout is `/home/vimkim/gh/dirpick-prototype`. Run instructions and keys
 are in `prototypes/README.md` on that branch. Ratatui and Crossterm are prototype
-tools; the production framework choice remains open.
+tools; the spec draft proposes using them in production as well.
 
 It compares a compact flat picker (A), a grouped content workbench (B), and a
 directory tree (C), with the accepted controls above results and preview.
@@ -132,21 +156,22 @@ layout switching, resize from 120x32 to 80x24, and terminal flag/alternate-scree
 restoration on exit. Captures are under `prototypes/terminal/screenshots/`.
 These checks do not validate a real editor process or clipboard transport.
 
-Shared mode-switch state remains a prototype assumption. Keep prototype code
-off the main branch and carry the selected design into the implementation spec.
+Shared mode-switch state has been accepted. Keep prototype code off the main
+branch and carry the selected design into the implementation spec.
 Add its branch and path to the relevant implementation ticket when tickets exist.
 
-## Decisions still open
+## Spec drafting
 
-- The order of complete workflows within the agreed release.
-- Narrow-terminal layout and remaining focus/selection keybindings.
-- Ranking and empty-query behavior in each mode.
-- State preserved across mode changes and manual scope edits.
-- Hidden entries, ignored entries, symlinks, and traversal boundaries.
-- Clipboard destination and formats; supported shells and the directory-return protocol.
-- Editor command selection and terminal handoff details.
-- Search cancellation, large-directory behavior, and result limits.
-- Terminal framework, search backend, highlighting engine, and packaging.
+The user accepted the remaining shell, traversal, and interaction defaults.
+The next step is to synthesize the GitHub spec and a proposed sequence of
+complete workflows. The spec draft will state engineering defaults for ranking,
+keybindings, editor invocation, directory-return encoding, cancellation, limits,
+backend choices, and packaging. Review the proposed application-level test
+boundary and ticket dependencies before publishing the issues.
+
+The concrete review draft is [first-release-publication.md](reviews/first-release-publication.md).
+It contains the spec body, testing proposal, and six ticket drafts. GitHub Issues
+will become authoritative after publication.
 
 ## Behavioral reference
 
@@ -170,8 +195,8 @@ Development runs on remote Linux over SSH. Use terminal tools and headless check
 The detected login shell is Nu, and `EDITOR` is `nvim`. The existing Nushell
 clipboard helper and Neovim clipboard configuration both use OSC 52 over SSH.
 Nushell wrappers already use JSON picker output or a cwd file followed by an
-ordinary shell `cd`. These are observed environment conventions; supported
-shells and clipboard formats for Dirpick remain design choices.
+ordinary shell `cd`. These observed conventions support the accepted Nushell
+and OSC 52 integration choices.
 
 Evidence: `~/.config/nushell/clip.nu`, `~/.config/nvim/lua/config/options.lua`,
 and `~/.config/nushell/alias.nu`. The current session reports `TERM_PROGRAM=herdr`;
