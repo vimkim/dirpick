@@ -4,8 +4,9 @@ Dirpick is a standalone Rust terminal application for filesystem navigation,
 search, filtering, and previews. Its command is `dirpick`.
 
 This brief preserves the agreed direction from the project handoff and the
-subsequent design interview. It records accepted product choices. Engineering
-defaults and the proposed test boundary will be made concrete in the spec draft.
+subsequent design interview. It records accepted product choices. The approved
+[GitHub spec](https://github.com/vimkim/dirpick/issues/1) defines engineering
+defaults and the test boundary.
 
 ## Settled project choices
 
@@ -53,7 +54,7 @@ results and preview. Tab moves between fields. Current settings remain visible.
 Use Workbench (B) as the preferred layout: group content matches by file,
 with the search controls on the left and scope and path filters on the right.
 On narrow terminals, switch between Results and Preview panes. Keep the active
-search settings visible; final focus and selection keys will be in the spec.
+search settings visible; final focus and selection keys are in the spec.
 The user accepted the native terminal design; the earlier browser mockups did
 not look sufficiently like a TUI.
 
@@ -80,8 +81,8 @@ scope and search. Browsing or manually applying another scope remains available;
 show Custom when it matches neither preset. The prototype uses F7 for the toggle.
 
 An empty Files or Directories query enumerates recursive paths. An empty
-Contents query shows guidance. Ranking and operational limits will be made
-concrete in the spec draft.
+Contents query shows guidance. Ranking and operational limits are defined
+in the approved spec.
 
 ### Query matching
 
@@ -138,7 +139,7 @@ The current study is a native Rust TUI on local branch `prototype/search-layouts
 commit `e49d91b`, with entry point `prototypes/terminal/Cargo.toml`.
 Its checkout is `/home/vimkim/gh/dirpick-prototype`. Run instructions and keys
 are in `prototypes/README.md` on that branch. Ratatui and Crossterm are prototype
-tools; the spec draft proposes using them in production as well.
+tools and are also the approved production terminal framework.
 
 It compares a compact flat picker (A), a grouped content workbench (B), and a
 directory tree (C), with the accepted controls above results and preview.
@@ -160,18 +161,17 @@ Shared mode-switch state has been accepted. Keep prototype code off the main
 branch and carry the selected design into the implementation spec.
 Add its branch and path to the relevant implementation ticket when tickets exist.
 
-## Spec drafting
+## Approved spec and implementation graph
 
-The user accepted the remaining shell, traversal, and interaction defaults.
-The next step is to synthesize the GitHub spec and a proposed sequence of
-complete workflows. The spec draft will state engineering defaults for ranking,
-keybindings, editor invocation, directory-return encoding, cancellation, limits,
-backend choices, and packaging. Review the proposed application-level test
-boundary and ticket dependencies before publishing the issues.
+The user approved the shell, traversal, and interaction defaults, followed by
+the engineering defaults, application-level testing approach, and six-ticket
+breakdown. [Spec #1](https://github.com/vimkim/dirpick/issues/1) and implementation
+tickets #2–#7 are published with verified native sub-issue and blocking links.
+Build complete workflows from the ready frontier on one integration branch.
 
-The concrete review draft is [first-release-publication.md](reviews/first-release-publication.md).
-It contains the spec body, testing proposal, and six ticket drafts. GitHub Issues
-will become authoritative after publication.
+The [publication index](reviews/first-release-publication.md) links the approved
+issues and their dependencies. GitHub Issues are authoritative; the original
+review copy is preserved in Git history.
 
 ## Behavioral reference
 
