@@ -3,8 +3,9 @@
 Dirpick is a standalone Rust terminal application for filesystem navigation,
 search, filtering, and previews. Its command is `dirpick`.
 
-This brief preserves the agreed direction from the project handoff. It is
-design context; release scope and interaction details still need agreement.
+This brief preserves the agreed direction from the project handoff and the
+subsequent design interview. It records accepted choices; remaining details
+need agreement before the implementation spec is written.
 
 ## Settled project choices
 
@@ -30,17 +31,39 @@ Desired outcomes include:
 - Browse directories and change the invoking shell to the selected directory
   through shell integration.
 - Preview source with syntax highlighting and matching-line context.
-- Open a content result in an editor at the matching line. Its priority for
-  the first release remains to be settled.
+- Open a content result in an editor at the matching line.
 
 The user has tried the proposed existing tools and found their interactions
 unsuitable. Further tool comparisons should address a specific design question.
 
+## Accepted design decisions
+
+The user accepted the following choices on 2026-10-16.
+
+### First release
+
+The first release includes Files, Directories, and Contents modes, path copying,
+shell `cd` integration, syntax previews, and opening an editor at the matching
+line. Build complete workflows one at a time within that release.
+
+### Layout and focus
+
+Mode, scope, query, include, and exclude controls stay visible above side-by-side
+results and preview. Tab moves between fields. Current settings remain visible.
+Narrow-terminal behavior and the remaining keybindings are still open.
+
+### Startup
+
+Start in the launching directory with Files mode selected and the query focused.
+Search recursively beneath that directory. Enumeration, limits, ranking, and
+query matching details remain open.
+
 ## Decisions still open
 
-- First usable release and the order of complete workflows within it.
-- Initial view, visible controls, focus movement, and keybindings.
-- Search scope, directory navigation, and state preserved across mode changes.
+- The order of complete workflows within the agreed release.
+- Narrow-terminal layout and remaining focus/selection keybindings.
+- Query matching, ranking, and empty-query behavior in each mode.
+- Changes to search scope during navigation and state preserved across mode changes.
 - Filename filters: basename or relative path, regex or glob, and applicable modes.
 - Hidden entries, ignored entries, symlinks, and traversal boundaries.
 - Clipboard destination and formats; supported shells and the directory-return protocol.
