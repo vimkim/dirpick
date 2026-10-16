@@ -102,8 +102,8 @@ fn copy_emits_the_exact_absolute_path_and_preserves_the_search() {
         root.path().join(filename).to_str().unwrap().as_bytes()
     );
     assert_eq!(session.state().generation, before.generation);
-    assert_eq!(session.state().query, before.query);
-    assert_eq!(session.state().scope, before.scope);
+    assert_eq!(session.state().settings.query, before.settings.query);
+    assert_eq!(session.state().settings.scope, before.settings.scope);
     assert_eq!(session.state().selected(), before.selected());
     assert_eq!(session.state().preview, before.preview);
     assert!(session.state().message.contains("payload sent"));

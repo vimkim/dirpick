@@ -1,4 +1,4 @@
-"""Small VT screen for semantic native-terminal filter checks."""
+"""Shared VT screen and process lifecycle for semantic native-terminal checks."""
 import codecs
 import re
 import unicodedata

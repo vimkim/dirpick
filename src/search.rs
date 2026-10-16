@@ -1,5 +1,5 @@
 use crate::{
-    session::{Limits, SearchEvent, SearchMode, SearchResult},
+    session::{Limits, SearchEvent, SearchMode, SearchResult, SearchSettings},
     traversal::VisibilityPolicy,
     worker::Cancellation,
 };
@@ -10,15 +10,118 @@ use std::{
 };
 
 pub(crate) struct SearchRequest {
-    pub mode: SearchMode,
-    pub scope: PathBuf,
-    pub regex: bool,
-    pub query: String,
-    pub include: String,
-    pub exclude: String,
-    pub hidden: bool,
-    pub ignored: bool,
+    pub settings: SearchSettings,
     pub limits: Limits,
+}
+
+struct Candidate {
+    path: PathBuf,
+    relative_path: PathBuf,
+    relative: String,
+}
+
+/// Own the scan's common traversal, eligibility, and accounting. Matching,
+/// retention, and streaming cadence remain the responsibility of each mode.
+struct SearchTraversal<'a> {
+    walk: ignore::Walk,
+    request: &'a SearchRequest,
+    policy: &'a VisibilityPolicy,
+    generation: u64,
+    tx: &'a SyncSender<SearchEvent>,
+    cancel: &'a Cancellation,
+    visited: usize,
+    errors: usize,
+    entry_limit: bool,
+    reported_error: bool,
+}
+
+impl<'a> SearchTraversal<'a> {
+    fn new(
+        generation: u64,
+        request: &'a SearchRequest,
+        policy: &'a VisibilityPolicy,
+        tx: &'a SyncSender<SearchEvent>,
+        cancel: &'a Cancellation,
+    ) -> Self {
+        Self {
+            walk: policy
+                .walker(&request.settings.scope, cancel.clone())
+                .build(),
+            request,
+            policy,
+            generation,
+            tx,
+            cancel,
+            visited: 0,
+            errors: 0,
+            entry_limit: false,
+            reported_error: false,
+        }
+    }
+
+    fn error(&mut self, message: impl ToString) {
+        self.errors += 1;
+        if !self.reported_error {
+            deliver(
+                self.tx,
+                SearchEvent::ScanError {
+                    generation: self.generation,
+                    message: message.to_string(),
+                },
+                self.cancel,
+                true,
+            );
+            self.reported_error = true;
+        }
+    }
+
+    fn next(&mut self) -> Option<Candidate> {
+        loop {
+            if self.cancel.cancelled() {
+                return None;
+            }
+            let entry = match self.walk.next()? {
+                Ok(entry) => entry,
+                Err(error) => {
+                    self.error(error);
+                    continue;
+                }
+            };
+            if let Some(error) = entry.error() {
+                self.error(error);
+            }
+            if entry.depth() == 0 {
+                continue;
+            }
+            if self.visited == self.request.limits.entries {
+                self.entry_limit = true;
+                return None;
+            }
+            self.visited += 1;
+            if !entry.file_type().is_some_and(|kind| {
+                if self.request.settings.mode == SearchMode::Directories {
+                    kind.is_dir()
+                } else {
+                    kind.is_file()
+                }
+            }) {
+                continue;
+            }
+            let relative_path = entry
+                .path()
+                .strip_prefix(&self.request.settings.scope)
+                .unwrap()
+                .to_owned();
+            let relative = relative_path.to_string_lossy().into_owned();
+            if self.policy.accepts(&relative) {
+                return Some(Candidate {
+                    path: entry.into_path(),
+                    relative_path,
+                    relative,
+                });
+            }
+        }
+    }
 }
 
 pub(crate) fn deliver(
@@ -51,11 +154,11 @@ pub(crate) fn run(
     cancel: Cancellation,
 ) {
     let policy = match VisibilityPolicy::compile(
-        request.scope.clone(),
-        &request.include,
-        &request.exclude,
-        request.hidden,
-        request.ignored,
+        request.settings.scope.clone(),
+        &request.settings.include,
+        &request.settings.exclude,
+        request.settings.hidden,
+        request.settings.ignored,
     ) {
         Ok(filters) => filters,
         Err(errors) => {
@@ -72,76 +175,27 @@ pub(crate) fn run(
             return;
         }
     };
-    if request.mode == SearchMode::Contents {
+    if request.settings.mode == SearchMode::Contents {
         run_contents(generation, &request, &policy, tx, cancel);
         return;
     }
     let mut retained = BTreeMap::new();
-    let (mut visited, mut matched, mut errors) = (0, 0, 0);
-    let mut entry_limit = false;
-    let mut reported_error = false;
-    let mut report = |error: &ignore::Error| {
-        if !reported_error {
-            deliver(
-                tx,
-                SearchEvent::ScanError {
-                    generation,
-                    message: error.to_string(),
-                },
-                &cancel,
-                true,
-            );
-            reported_error = true;
-        }
-    };
-    for entry in policy.walker(&request.scope, cancel.clone()).build() {
-        if cancel.cancelled() {
-            return;
-        }
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(error) => {
-                errors += 1;
-                report(&error);
-                continue;
-            }
-        };
-        if let Some(error) = entry.error() {
-            errors += 1;
-            report(error);
-        }
-        if entry.depth() == 0 {
-            continue;
-        }
-        if visited == request.limits.entries {
-            entry_limit = true;
-            break;
-        }
-        visited += 1;
-        if !entry.file_type().is_some_and(|kind| match request.mode {
-            SearchMode::Files => kind.is_file(),
-            SearchMode::Directories => kind.is_dir(),
-            SearchMode::Contents => false,
-        }) {
-            continue;
-        }
-        let relative_path = entry
-            .path()
-            .strip_prefix(&request.scope)
-            .unwrap()
-            .to_owned();
-        let relative = relative_path.to_string_lossy().into_owned();
-        if !policy.accepts(&relative) {
-            continue;
-        }
-        let Some(score) = rank(&request.query, &relative) else {
+    let mut matched = 0;
+    let mut traversal = SearchTraversal::new(generation, &request, &policy, tx, &cancel);
+    while let Some(candidate) = traversal.next() {
+        let Candidate {
+            path,
+            relative_path,
+            relative,
+        } = candidate;
+        let Some(score) = rank(&request.settings.query, &relative) else {
             continue;
         };
         matched += 1;
         retained.insert(
             (score, relative_path),
             SearchResult {
-                path: entry.into_path(),
+                path,
                 relative,
                 line: 1,
                 text: String::new(),
@@ -151,16 +205,16 @@ pub(crate) fn run(
         if retained.len() > request.limits.results {
             retained.pop_last();
         }
-        if visited % 128 == 0 {
+        if traversal.visited.is_multiple_of(128) {
             deliver(
                 tx,
                 SearchEvent::Results {
                     generation,
                     rows: retained.values().cloned().collect(),
-                    visited,
+                    visited: traversal.visited,
                     matched,
-                    errors,
-                    entry_limit,
+                    errors: traversal.errors,
+                    entry_limit: traversal.entry_limit,
                     done: false,
                 },
                 &cancel,
@@ -173,10 +227,10 @@ pub(crate) fn run(
         SearchEvent::Results {
             generation,
             rows: retained.into_values().collect(),
-            visited,
+            visited: traversal.visited,
             matched,
-            errors,
-            entry_limit,
+            errors: traversal.errors,
+            entry_limit: traversal.entry_limit,
             done: true,
         },
         &cancel,
@@ -244,7 +298,7 @@ fn run_contents(
     const CONTENT_RESULTS: usize = 5_000;
     const RESULT_BYTES: usize = 16 * 1024 * 1024;
     let mut retained_bytes = 0;
-    let pattern = match content_pattern(&request.query, request.regex) {
+    let pattern = match content_pattern(&request.settings.query, request.settings.regex) {
         Ok(pattern) => pattern,
         Err(message) => {
             deliver(
@@ -260,72 +314,22 @@ fn run_contents(
         }
     };
     let mut rows = Vec::new();
-    let (mut visited, mut matched, mut errors, mut skipped) = (0, 0, 0, 0);
-    let (mut entry_limit, mut result_limit) = (false, false);
-    let mut reported_error = false;
-    let mut report = |message: String| {
-        if !reported_error {
-            deliver(
-                tx,
-                SearchEvent::ScanError {
-                    generation,
-                    message,
-                },
-                &cancel,
-                true,
-            );
-            reported_error = true;
-        }
-    };
-    if !request.query.is_empty() {
-        'walk: for entry in policy.walker(&request.scope, cancel.clone()).build() {
-            if cancel.cancelled() {
-                return;
-            }
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(error) => {
-                    errors += 1;
-                    report(error.to_string());
-                    continue;
-                }
-            };
-            if let Some(error) = entry.error() {
-                errors += 1;
-                report(error.to_string());
-            }
-            if entry.depth() == 0 {
-                continue;
-            }
-            if visited == request.limits.entries {
-                entry_limit = true;
-                break;
-            }
-            visited += 1;
-            if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-                continue;
-            }
-            let relative = entry
-                .path()
-                .strip_prefix(&request.scope)
-                .unwrap()
-                .to_string_lossy()
-                .into_owned();
-            if !policy.accepts(&relative) {
-                continue;
-            }
-            let file = match File::open(entry.path()) {
+    let (mut matched, mut skipped) = (0, 0);
+    let mut result_limit = false;
+    let mut traversal = SearchTraversal::new(generation, request, policy, tx, &cancel);
+    if !request.settings.query.is_empty() {
+        'walk: while let Some(candidate) = traversal.next() {
+            let Candidate { path, relative, .. } = candidate;
+            let file = match File::open(&path) {
                 Ok(file) => file,
                 Err(error) => {
-                    errors += 1;
-                    report(format!("{}: {error}", entry.path().display()));
+                    traversal.error(format!("{}: {error}", path.display()));
                     continue;
                 }
             };
             let mut bytes = Vec::new();
             if let Err(error) = file.take(FILE_BYTES as u64 + 1).read_to_end(&mut bytes) {
-                errors += 1;
-                report(format!("{}: {error}", entry.path().display()));
+                traversal.error(format!("{}: {error}", path.display()));
                 continue;
             }
             if bytes.len() > FILE_BYTES || bytes.contains(&0) {
@@ -343,7 +347,7 @@ fn run_contents(
                 let mut matches = Vec::new();
                 let line_bytes = line.len()
                     + relative.len()
-                    + entry.path().as_os_str().as_encoded_bytes().len()
+                    + path.as_os_str().as_encoded_bytes().len()
                     + std::mem::size_of::<SearchResult>();
                 for found in pattern.find_iter(line) {
                     if cancel.cancelled() {
@@ -377,7 +381,7 @@ fn run_contents(
                 retained_bytes +=
                     line_bytes + matches.capacity() * std::mem::size_of::<std::ops::Range<usize>>();
                 rows.push(SearchResult {
-                    path: entry.path().to_owned(),
+                    path: path.clone(),
                     relative: relative.clone(),
                     line: index + 1,
                     text: line.to_owned(),
@@ -390,10 +394,10 @@ fn run_contents(
                         SearchEvent::Results {
                             generation,
                             rows: rows.clone(),
-                            visited,
+                            visited: traversal.visited,
                             matched,
-                            errors,
-                            entry_limit,
+                            errors: traversal.errors,
+                            entry_limit: traversal.entry_limit,
                             done: false,
                         },
                         &cancel,
@@ -419,10 +423,10 @@ fn run_contents(
         SearchEvent::Results {
             generation,
             rows,
-            visited,
+            visited: traversal.visited,
             matched,
-            errors,
-            entry_limit,
+            errors: traversal.errors,
+            entry_limit: traversal.entry_limit,
             done: true,
         },
         &cancel,

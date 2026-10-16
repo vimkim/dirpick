@@ -85,10 +85,17 @@ Resizing keeps the active search, selected result, and manual preview position.
 A new content selection centers its matching line within the available preview
 rows. Its context adjusts on resize until PageUp/PageDown begins independent
 scrolling. Back restores the previous preview position and scrolling behavior.
+Preview pages follow the visible height with one overlapping row, so every
+source line or directory child remains reachable at 70×18. A shorter byte-limited
+window advances only past the rows it displayed. The preview footer shows the
+displayed range.
 The interface supports terminals of at least 70 columns and 18 rows. Below
 that size, F12 opens basic help and Esc or Ctrl-C still exits.
 Set `NO_COLOR` to use terminal default colors with selection markers and attributes.
 Field editing and cursor positioning use Unicode terminal display widths.
+Source clipping keeps complete graphemes, including joined emoji, and measures
+their composed display width. Syntax and match ranges retain raw UTF-8 offsets;
+a match inside a composed grapheme highlights the complete glyph.
 
 The footer reserves separate rows for completion or limits, action feedback,
 and key guidance. `PARTIAL` appears first when a search reaches a limit.
@@ -201,6 +208,9 @@ The release journeys cover all three modes at 120×32, 80×24, and 70×18, inclu
 repeated resizing, field focus, Unicode editing, history, exact directory JSON,
 and cancellation. The wrapper also changes an isolated Nu process's actual PWD
 at each size. Failed editors include a child that leaves terminal modes raw.
+Minimum-size PTYs page through all 50 source lines and all 50 directory children.
+They also inspect emitted joined emoji, following text, combining marks, escaped
+controls, and highlighting of a match inside a composed glyph.
 
 After dependency changes, run `cargo fetch --locked` and
 `python3 -B scripts/dependency_notices.py` to refresh the notice bundle.

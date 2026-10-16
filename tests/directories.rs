@@ -68,9 +68,9 @@ fn directories_share_fuzzy_filters_and_independent_traversal_settings() {
     assert_eq!(paths(&session), [".secret/src", "ignored/src"]);
     session.command(Command::SetMode(SearchMode::Files));
     settled(&mut session);
-    assert_eq!(session.state().query, "src");
-    assert_eq!(session.state().include, "/src$");
-    assert!(session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().settings.query, "src");
+    assert_eq!(session.state().settings.include, "/src$");
+    assert!(session.state().settings.hidden && session.state().settings.ignored);
 }
 
 #[test]
@@ -149,36 +149,36 @@ fn browse_clears_only_query_and_back_restores_mode_selection_preview_and_setting
     assert_eq!(before.preview.top, 30);
     session.command(Command::OpenSelected);
     settled(&mut session);
-    assert_eq!(session.state().scope, root.path().join("dest-b"));
+    assert_eq!(session.state().settings.scope, root.path().join("dest-b"));
     assert_eq!(session.state().preset, ScopePreset::Custom);
-    assert_eq!(session.state().query, "");
-    assert_eq!(session.state().include, before.include);
-    assert_eq!(session.state().exclude, before.exclude);
-    assert!(session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().settings.query, "");
+    assert_eq!(session.state().settings.include, before.settings.include);
+    assert_eq!(session.state().settings.exclude, before.settings.exclude);
+    assert!(session.state().settings.hidden && session.state().settings.ignored);
     assert_eq!(session.state().launch_cwd, root.path());
     session.command(Command::SetMode(SearchMode::Files));
     session.command(Command::SetInclude(String::new()));
     session.command(Command::ToggleHidden);
     session.command(Command::Back);
     settled(&mut session);
-    assert_eq!(session.state().mode, before.mode);
-    assert_eq!(session.state().scope, before.scope);
+    assert_eq!(session.state().settings.mode, before.settings.mode);
+    assert_eq!(session.state().settings.scope, before.settings.scope);
     assert_eq!(session.state().selected(), before.selected());
     assert_eq!(session.state().preview, before.preview);
-    assert_eq!(session.state().query, before.query);
-    assert_eq!(session.state().include, before.include);
-    assert_eq!(session.state().exclude, before.exclude);
-    assert_eq!(session.state().hidden, before.hidden);
-    assert_eq!(session.state().ignored, before.ignored);
+    assert_eq!(session.state().settings.query, before.settings.query);
+    assert_eq!(session.state().settings.include, before.settings.include);
+    assert_eq!(session.state().settings.exclude, before.settings.exclude);
+    assert_eq!(session.state().settings.hidden, before.settings.hidden);
+    assert_eq!(session.state().settings.ignored, before.settings.ignored);
     session.command(Command::OpenSelected);
     settled(&mut session);
     session.command(Command::ToggleScope);
     settled(&mut session);
-    assert_eq!(session.state().scope, root.path());
+    assert_eq!(session.state().settings.scope, root.path());
     session.command(Command::ToggleScope);
     settled(&mut session);
     assert_eq!(session.state().preset, ScopePreset::Cwd);
-    assert_eq!(session.state().scope, root.path());
+    assert_eq!(session.state().settings.scope, root.path());
 }
 
 #[test]

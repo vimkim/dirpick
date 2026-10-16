@@ -11,6 +11,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -172,18 +173,24 @@ impl Workbench {
             help_max_scroll: 0,
             preview_pane: false,
             theme: Theme::new(),
-            observed_scope: session.state().scope.clone(),
+            observed_scope: session.state().settings.scope.clone(),
             applying_scope: None,
         };
         ui.sync(session);
         ui
     }
     fn sync(&mut self, session: &SearchSession) {
-        self.query.set(session.state().query.clone());
-        self.include.set(session.state().include.clone());
-        self.exclude.set(session.state().exclude.clone());
-        self.scope
-            .set(session.state().scope.to_string_lossy().into_owned());
+        self.query.set(session.state().settings.query.clone());
+        self.include.set(session.state().settings.include.clone());
+        self.exclude.set(session.state().settings.exclude.clone());
+        self.scope.set(
+            session
+                .state()
+                .settings
+                .scope
+                .to_string_lossy()
+                .into_owned(),
+        );
     }
     pub fn observe(&mut self, session: &SearchSession) {
         if let Some(generation) = self.applying_scope
@@ -195,18 +202,18 @@ impl Workbench {
             }
             self.applying_scope = None;
         }
-        if self.observed_scope != session.state().scope {
+        if self.observed_scope != session.state().settings.scope {
             self.sync(session);
-            self.observed_scope = session.state().scope.clone();
+            self.observed_scope = session.state().settings.scope.clone();
         } else {
-            if self.query.text != session.state().query {
-                self.query.set(session.state().query.clone());
+            if self.query.text != session.state().settings.query {
+                self.query.set(session.state().settings.query.clone());
             }
-            if self.include.text != session.state().include {
-                self.include.set(session.state().include.clone());
+            if self.include.text != session.state().settings.include {
+                self.include.set(session.state().settings.include.clone());
             }
-            if self.exclude.text != session.state().exclude {
-                self.exclude.set(session.state().exclude.clone());
+            if self.exclude.text != session.state().settings.exclude {
+                self.exclude.set(session.state().settings.exclude.clone());
             }
         }
     }
@@ -290,8 +297,8 @@ impl Workbench {
             }
             KeyCode::Up => session.command(Command::MoveSelection(-1)),
             KeyCode::Down => session.command(Command::MoveSelection(1)),
-            KeyCode::PageUp => session.command(Command::ScrollPreview(-10)),
-            KeyCode::PageDown => session.command(Command::ScrollPreview(10)),
+            KeyCode::PageUp => session.command(Command::PagePreview(-1)),
+            KeyCode::PageDown => session.command(Command::PagePreview(1)),
             KeyCode::Enter if self.focus == Focus::Scope => {
                 self.applying_scope = Some(session.state().generation);
                 session.command(Command::ApplyScope(self.scope.text.clone().into()));
@@ -347,7 +354,7 @@ impl Workbench {
             ])
             .split(area);
         frame.render_widget(
-            Paragraph::new(format!(" dirpick │ Workbench │ {:?}", state.mode))
+            Paragraph::new(format!(" dirpick │ Workbench │ {:?}", state.settings.mode))
                 .style(self.theme.accent),
             vertical[0],
         );
@@ -366,12 +373,12 @@ impl Workbench {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(Span::styled(
-                    match state.mode {
-                        SearchMode::Contents if state.regex => {
+                    match state.settings.mode {
+                        SearchMode::Contents if state.settings.regex => {
                             "F3 Contents · F4 Regex:on · smart case"
                         }
                         SearchMode::Contents => "F3 Contents · F4 Regex:off · smart case",
-                        _ if state.regex => "F4 Regex:on (Contents) · fuzzy",
+                        _ if state.settings.regex => "F4 Regex:on (Contents) · fuzzy",
                         _ => "F4 Regex:off (Contents) · fuzzy",
                     },
                     self.theme.accent,
@@ -441,8 +448,8 @@ impl Workbench {
                 Line::from(Span::styled(
                     format!(
                         "F8 Hidden:{} F9 Ignored:{}",
-                        if state.hidden { "on" } else { "off" },
-                        if state.ignored { "on" } else { "off" }
+                        if state.settings.hidden { "on" } else { "off" },
+                        if state.settings.ignored { "on" } else { "off" }
                     ),
                     self.theme.accent,
                 )),
@@ -497,7 +504,7 @@ impl Workbench {
                     ""
                 },
                 state.results.len(),
-                match state.mode {
+                match state.settings.mode {
                     SearchMode::Files => "files",
                     SearchMode::Directories => "directories",
                     SearchMode::Contents => "matching lines",
@@ -548,7 +555,7 @@ impl Workbench {
             Line::raw(detail),
             Line::raw(format!(
                 "↑↓ Select  Enter {}  Tab Fields  F10 Pane  F12 Help  Esc Quit",
-                if state.mode == SearchMode::Directories {
+                if state.settings.mode == SearchMode::Directories {
                     "Browse"
                 } else {
                     "Editor"
@@ -671,7 +678,7 @@ impl Workbench {
             .skip(first)
             .take(window)
             .map(|(index, row)| {
-                if state.mode == SearchMode::Contents {
+                if state.settings.mode == SearchMode::Contents {
                     let mut lines = Vec::new();
                     if index == first || state.results[index - 1].path != row.path {
                         lines.push(Line::styled(display_text(&row.relative), self.theme.accent));
@@ -717,12 +724,14 @@ impl Workbench {
                     || state.exclude_error.is_some()
                 {
                     "Invalid patterns · edit marked fields"
-                } else if state.mode == SearchMode::Contents && state.query.is_empty() {
+                } else if state.settings.mode == SearchMode::Contents
+                    && state.settings.query.is_empty()
+                {
                     "Type a content query to search lines"
-                } else if state.mode == SearchMode::Contents {
+                } else if state.settings.mode == SearchMode::Contents {
                     "No matching lines"
                 } else {
-                    match state.mode {
+                    match state.settings.mode {
                         SearchMode::Directories => "No matching directories",
                         _ => "No matching files",
                     }
@@ -780,13 +789,18 @@ impl Workbench {
             } else {
                 format!(
                     "{} {}–{}/{} · PgUp/Dn{}{}",
-                    if state.mode == SearchMode::Directories {
+                    if state.settings.mode == SearchMode::Directories {
                         "Children"
                     } else {
                         "Lines"
                     },
                     state.preview.top + 1,
-                    state.preview.top + state.preview.lines.len(),
+                    state.preview.top
+                        + state
+                            .preview
+                            .lines
+                            .len()
+                            .min(usize::from(source_area.height)),
                     state.preview.total_lines,
                     if state.preview.status.is_empty() {
                         ""
@@ -811,22 +825,25 @@ impl Workbench {
     ) -> Vec<Span<'static>> {
         // Both range lists are ordered raw UTF-8 offsets. Walk only the visible
         // prefix, advancing each range cursor once instead of testing every
-        // match for every character. Bound zero-width combining sequences too.
+        // match for every grapheme. Keep each displayed cluster together even
+        // when a syntax or match boundary falls inside it. The source offsets
+        // remain raw UTF-8 bytes; escaping happens only after segmentation.
+        // Bound runs of zero-width clusters too.
         let (mut syntax_index, mut match_index, mut cells) = (0, 0, 0);
         let mut spans: Vec<Span<'static>> = Vec::new();
-        for (offset, character) in text
-            .char_indices()
+        for (offset, grapheme) in text
+            .grapheme_indices(true)
             .take(width.saturating_mul(4).saturating_add(32))
         {
             if cells >= width {
                 break;
             }
-            let displayed = display_text(&character.to_string());
-            let character_width = displayed.width();
-            if cells + character_width > width {
+            let displayed = display_text(grapheme);
+            let grapheme_width = displayed.width();
+            if cells + grapheme_width > width {
                 break;
             }
-            cells += character_width;
+            cells += grapheme_width;
             while syntax_index < syntax.len() && syntax[syntax_index].range.end <= offset {
                 syntax_index += 1;
             }
@@ -856,7 +873,7 @@ impl Workbench {
             }
             if matches
                 .get(match_index)
-                .is_some_and(|range| range.contains(&offset))
+                .is_some_and(|range| range.start < offset + grapheme.len() && range.end > offset)
             {
                 style = if self.theme.no_color {
                     style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)

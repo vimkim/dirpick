@@ -113,7 +113,7 @@ fn opening_files_and_matches_requests_the_exact_line_and_preserves_state_on_retu
         );
         session.complete_action(action, result);
         assert_eq!(session.state().generation, before.generation);
-        assert_eq!(session.state().query, before.query);
+        assert_eq!(session.state().settings.query, before.settings.query);
         assert_eq!(session.state().selected(), before.selected());
         assert_eq!(session.state().preview, before.preview);
     }

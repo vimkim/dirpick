@@ -67,7 +67,7 @@ fn project_cwd_custom_scope_and_back_preserve_the_search() {
     fs::write(root.path().join("nested/other.txt"), "nested\n").unwrap();
     let mut session = SearchSession::open(root.path().join("nested")).unwrap();
     settled(&mut session);
-    assert_eq!(session.state().scope, root.path());
+    assert_eq!(session.state().settings.scope, root.path());
     assert_eq!(session.state().preset, ScopePreset::Project);
     session.command(Command::SetQuery("txt".into()));
     settled(&mut session);
@@ -75,15 +75,15 @@ fn project_cwd_custom_scope_and_back_preserve_the_search() {
     settled(&mut session);
     session.command(Command::ToggleScope);
     settled(&mut session);
-    assert_eq!(session.state().query, "txt");
-    assert_eq!(session.state().scope, root.path().join("nested"));
+    assert_eq!(session.state().settings.query, "txt");
+    assert_eq!(session.state().settings.scope, root.path().join("nested"));
     assert_eq!(session.state().preset, ScopePreset::Cwd);
     session.command(Command::ApplyScope("..".into()));
     settled(&mut session);
-    assert_eq!(session.state().query, "");
+    assert_eq!(session.state().settings.query, "");
     session.command(Command::Back);
     settled(&mut session);
-    assert_eq!(session.state().query, "txt");
+    assert_eq!(session.state().settings.query, "txt");
     assert_eq!(session.state().preset, ScopePreset::Cwd);
     session.command(Command::Back);
     settled(&mut session);
@@ -128,7 +128,7 @@ fn git_worktrees_submodules_and_fallback_resolve_the_working_tree_not_metadata()
     );
     fs::create_dir(worktree.join("nested")).unwrap();
     let session = SearchSession::open(worktree.join("nested")).unwrap();
-    assert_eq!(session.state().scope, worktree);
+    assert_eq!(session.state().settings.scope, worktree);
     assert!(!session.state().project_fallback);
     git(
         &repository,
@@ -144,7 +144,7 @@ fn git_worktrees_submodules_and_fallback_resolve_the_working_tree_not_metadata()
     );
     fs::create_dir(repository.join("module/nested")).unwrap();
     let session = SearchSession::open(repository.join("module/nested")).unwrap();
-    assert_eq!(session.state().scope, repository.join("module"));
+    assert_eq!(session.state().settings.scope, repository.join("module"));
     let mut session = SearchSession::with_options(
         &repository,
         Options {
@@ -154,11 +154,11 @@ fn git_worktrees_submodules_and_fallback_resolve_the_working_tree_not_metadata()
     )
     .unwrap();
     assert!(session.state().project_fallback);
-    assert_eq!(session.state().scope, repository);
+    assert_eq!(session.state().settings.scope, repository);
     assert_eq!(session.state().preset, ScopePreset::Project);
     session.command(Command::ToggleScope);
     assert_eq!(session.state().preset, ScopePreset::Cwd);
-    assert_eq!(session.state().scope, repository);
+    assert_eq!(session.state().settings.scope, repository);
     session.command(Command::ToggleScope);
     assert_eq!(session.state().preset, ScopePreset::Project);
     let non_git = fixture.path().join("ordinary");
@@ -307,7 +307,7 @@ fn native_paths_survive_scope_history_and_preview_scrolling() {
     fs::write(custom.join("custom.txt"), "custom preview\n").unwrap();
     let mut session = SearchSession::open(&project).unwrap();
     settled(&mut session);
-    assert_eq!(session.state().scope, project);
+    assert_eq!(session.state().settings.scope, project);
     assert!(!session.state().project_fallback);
     assert_eq!(
         session.state().selected().unwrap().path,
@@ -332,7 +332,7 @@ fn native_paths_survive_scope_history_and_preview_scrolling() {
     session.command(Command::ToggleScope);
     settled(&mut session);
     assert_eq!(session.state().preset, ScopePreset::Project);
-    assert_eq!(session.state().scope, project);
+    assert_eq!(session.state().settings.scope, project);
 }
 
 #[test]

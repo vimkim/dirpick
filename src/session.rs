@@ -91,24 +91,30 @@ pub struct Preview {
     pub loading: bool,
     pub status: String,
 }
+/// Search inputs move together through observable state, history, and workers.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchSettings {
+    pub mode: SearchMode,
+    /// Retained across modes; effective only in Contents.
+    pub regex: bool,
+    pub scope: PathBuf,
+    pub query: String,
+    pub include: String,
+    pub exclude: String,
+    pub hidden: bool,
+    pub ignored: bool,
+}
 #[derive(Clone, Debug)]
 pub struct State {
-    pub mode: SearchMode,
-    pub regex: bool,
+    pub settings: SearchSettings,
     pub query_error: Option<String>,
     pub skipped: usize,
-    pub scope: PathBuf,
     pub launch_cwd: PathBuf,
     pub project_root: PathBuf,
     pub project_fallback: bool,
     pub preset: ScopePreset,
-    pub query: String,
-    pub include: String,
-    pub exclude: String,
     pub include_error: Option<String>,
     pub exclude_error: Option<String>,
-    pub hidden: bool,
-    pub ignored: bool,
     pub results: Vec<SearchResult>,
     pub selected_index: usize,
     pub generation: u64,
@@ -144,6 +150,8 @@ pub enum Command {
     /// Number of source/child rows visible in the preview, excluding its chrome.
     SetPreviewRows(usize),
     ScrollPreview(isize),
+    /// Scroll by visible pages, overlapping one source/child row when possible.
+    PagePreview(isize),
     ToggleScope,
     ApplyScope(PathBuf),
     Back,
@@ -188,15 +196,8 @@ pub enum SearchEvent {
     },
 }
 struct HistoryEntry {
-    mode: SearchMode,
-    regex: bool,
-    scope: PathBuf,
+    settings: SearchSettings,
     preset: ScopePreset,
-    query: String,
-    include: String,
-    exclude: String,
-    hidden: bool,
-    ignored: bool,
     target: Option<SelectionTarget>,
 }
 
@@ -246,22 +247,24 @@ impl SearchSession {
         let scope_tx = tx.clone();
         let mut session = Self {
             state: State {
-                mode: SearchMode::Files,
-                regex: false,
+                settings: SearchSettings {
+                    mode: SearchMode::Files,
+                    regex: false,
+                    scope: scope.clone(),
+                    query: String::new(),
+                    include: String::new(),
+                    exclude: String::new(),
+                    hidden: false,
+                    ignored: false,
+                },
                 query_error: None,
                 skipped: 0,
                 project_root: scope.clone(),
-                scope,
                 launch_cwd,
                 project_fallback,
                 preset: ScopePreset::Project,
-                query: String::new(),
-                include: String::new(),
-                exclude: String::new(),
                 include_error: None,
                 exclude_error: None,
-                hidden: false,
-                ignored: false,
                 results: Vec::new(),
                 selected_index: 0,
                 generation: 0,
@@ -319,7 +322,9 @@ impl SearchSession {
         match command {
             Command::ChangeDirectory => {
                 self.action = None;
-                if self.state.mode != SearchMode::Directories || self.state.selected().is_none() {
+                if self.state.settings.mode != SearchMode::Directories
+                    || self.state.selected().is_none()
+                {
                     self.state.message =
                         "Select a directory in F2 Directories for cd & exit".into();
                 } else if !self.shell_integration {
@@ -337,7 +342,7 @@ impl SearchSession {
             }
             Command::OpenSelected => {
                 self.action = None;
-                if self.state.mode == SearchMode::Directories {
+                if self.state.settings.mode == SearchMode::Directories {
                     if let Some(row) = self.state.selected() {
                         self.command(Command::ApplyScope(row.path.clone()));
                     } else {
@@ -349,7 +354,7 @@ impl SearchSession {
                     match crate::action::EditorCommand::from_environment(
                         &row.path,
                         row.line,
-                        self.state.mode == SearchMode::Contents,
+                        self.state.settings.mode == SearchMode::Contents,
                     ) {
                         Ok(_) => {
                             self.action = Some(Action::OpenEditor {
@@ -367,14 +372,14 @@ impl SearchSession {
                 }
             }
             Command::SetMode(mode) => {
-                if mode != self.state.mode {
-                    self.state.mode = mode;
+                if mode != self.state.settings.mode {
+                    self.state.settings.mode = mode;
                     self.refresh();
                 }
             }
             Command::ToggleRegex => {
-                self.state.regex = !self.state.regex;
-                if self.state.mode == SearchMode::Contents {
+                self.state.settings.regex = !self.state.settings.regex;
+                if self.state.settings.mode == SearchMode::Contents {
                     self.refresh();
                 }
             }
@@ -406,7 +411,7 @@ impl SearchSession {
                 let path = if path.is_absolute() {
                     path
                 } else {
-                    self.state.scope.join(path)
+                    self.state.settings.scope.join(path)
                 };
                 self.scope_id += 1;
                 self.state.scope_loading = true;
@@ -416,15 +421,8 @@ impl SearchSession {
                 self.cancel_scope();
                 if let Some(previous) = self.history.pop() {
                     let target = previous.target;
-                    self.state.mode = previous.mode;
-                    self.state.regex = previous.regex;
-                    self.state.scope = previous.scope;
+                    self.state.settings = previous.settings;
                     self.state.preset = previous.preset;
-                    self.state.query = previous.query;
-                    self.state.include = previous.include;
-                    self.state.exclude = previous.exclude;
-                    self.state.hidden = previous.hidden;
-                    self.state.ignored = previous.ignored;
                     self.refresh();
                     self.restore = target;
                     self.state.message = "Previous scope and search restored".into();
@@ -433,29 +431,29 @@ impl SearchSession {
                 }
             }
             Command::SetQuery(query) => {
-                if self.state.query != query {
-                    self.state.query = query;
+                if self.state.settings.query != query {
+                    self.state.settings.query = query;
                     self.refresh();
                 }
             }
             Command::SetInclude(include) => {
-                if self.state.include != include {
-                    self.state.include = include;
+                if self.state.settings.include != include {
+                    self.state.settings.include = include;
                     self.refresh();
                 }
             }
             Command::SetExclude(exclude) => {
-                if self.state.exclude != exclude {
-                    self.state.exclude = exclude;
+                if self.state.settings.exclude != exclude {
+                    self.state.settings.exclude = exclude;
                     self.refresh();
                 }
             }
             Command::ToggleHidden => {
-                self.state.hidden = !self.state.hidden;
+                self.state.settings.hidden = !self.state.settings.hidden;
                 self.refresh();
             }
             Command::ToggleIgnored => {
-                self.state.ignored = !self.state.ignored;
+                self.state.settings.ignored = !self.state.settings.ignored;
                 self.refresh();
             }
             Command::Select(index) => self.select(index),
@@ -473,6 +471,18 @@ impl SearchSession {
                     top.min(self.state.preview.total_lines - 1)
                 };
                 self.request_preview();
+            }
+            Command::PagePreview(pages) => {
+                // A byte-limited window can be shorter than the viewport.
+                // Advance past only the rows actually shown. Backward paging
+                // uses the viewport so a short final page does not shrink it.
+                let visible = if pages > 0 {
+                    self.preview_rows.min(self.state.preview.lines.len()).max(1)
+                } else {
+                    self.preview_rows
+                };
+                let step = visible.saturating_sub(1).max(1) as isize;
+                self.command(Command::ScrollPreview(pages.saturating_mul(step)));
             }
             Command::SetPreviewRows(rows) => {
                 let rows = rows.clamp(1, 200);
@@ -589,7 +599,7 @@ impl SearchSession {
                 self.state.matched = matched;
                 self.state.errors = errors;
                 self.state.entry_limit = entry_limit;
-                if self.state.mode != SearchMode::Contents {
+                if self.state.settings.mode != SearchMode::Contents {
                     self.state.result_limit = matched > self.limits.results;
                 }
                 self.state.scanning = !done;
@@ -647,7 +657,7 @@ impl SearchSession {
                 // A byte-limited window may contain fewer source lines than
                 // the viewport. Keep a new match visible even in that case.
                 if self.preview_follows_selection
-                    && self.state.mode == SearchMode::Contents
+                    && self.state.settings.mode == SearchMode::Contents
                     && let Some(row) = self.state.selected()
                     && row.line <= self.state.preview.total_lines
                     && !self.state.preview.lines.is_empty()
@@ -675,15 +685,8 @@ impl SearchSession {
         self.cancel_scope();
         // History stores user state, not retained result batches.
         self.history.push(HistoryEntry {
-            mode: self.state.mode,
-            regex: self.state.regex,
-            scope: self.state.scope.clone(),
+            settings: self.state.settings.clone(),
             preset: self.state.preset,
-            query: self.state.query.clone(),
-            include: self.state.include.clone(),
-            exclude: self.state.exclude.clone(),
-            hidden: self.state.hidden,
-            ignored: self.state.ignored,
             target: self.state.selected().map(|row| SelectionTarget {
                 path: row.path.clone(),
                 line: row.line,
@@ -691,10 +694,10 @@ impl SearchSession {
                 following_selection: self.preview_follows_selection,
             }),
         });
-        self.state.scope = scope;
+        self.state.settings.scope = scope;
         self.state.preset = preset;
         if clear_query {
-            self.state.query.clear();
+            self.state.settings.query.clear();
         }
         self.state.message = if clear_query {
             "Scope changed · query cleared · Alt-Left goes Back"
@@ -738,14 +741,7 @@ impl SearchSession {
         self.search.submit(
             self.state.generation,
             SearchRequest {
-                mode: self.state.mode,
-                regex: self.state.regex,
-                scope: self.state.scope.clone(),
-                query: self.state.query.clone(),
-                include: self.state.include.clone(),
-                exclude: self.state.exclude.clone(),
-                hidden: self.state.hidden,
-                ignored: self.state.ignored,
+                settings: self.state.settings.clone(),
                 limits: self.limits,
             },
         );
@@ -765,20 +761,26 @@ impl SearchSession {
                 PreviewRequest {
                     path: row.path.clone(),
                     top: self.state.preview.top,
-                    directory_policy: (self.state.mode == SearchMode::Directories)
+                    directory_policy: (self.state.settings.mode == SearchMode::Directories)
                         .then(|| {
                             VisibilityPolicy::compile(
-                                self.state.scope.clone(),
-                                &self.state.include,
-                                &self.state.exclude,
-                                self.state.hidden,
-                                self.state.ignored,
+                                self.state.settings.scope.clone(),
+                                &self.state.settings.include,
+                                &self.state.settings.exclude,
+                                self.state.settings.hidden,
+                                self.state.settings.ignored,
                             )
                             .ok()
                         })
                         .flatten(),
-                    content_pattern: (self.state.mode == SearchMode::Contents)
-                        .then(|| search::content_pattern(&self.state.query, self.state.regex).ok())
+                    content_pattern: (self.state.settings.mode == SearchMode::Contents)
+                        .then(|| {
+                            search::content_pattern(
+                                &self.state.settings.query,
+                                self.state.settings.regex,
+                            )
+                            .ok()
+                        })
                         .flatten(),
                 },
             );

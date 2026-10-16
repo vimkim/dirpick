@@ -25,7 +25,7 @@ fn contents_searches_literal_lines_and_previews_every_raw_utf8_match() {
     let root = tempdir().unwrap();
     fs::write(
         root.path().join("source.rs"),
-        "header\n한 a.b A.B a.b\nno regex: axb\n",
+        "header\n한 a.b A.B a.b\nno regex: axb\n👨‍👩‍👧‍👦👨‍👩‍👧‍👦 éX\n",
     )
     .unwrap();
     let mut session = SearchSession::open(root.path()).unwrap();
@@ -55,6 +55,17 @@ fn contents_searches_literal_lines_and_previews_every_raw_utf8_match() {
             .map(|row| row.line)
             .collect::<Vec<_>>(),
         vec![2, 3]
+    );
+    session.command(Command::SetQuery("👩".into()));
+    settled(&mut session);
+    // A component inside each composed family retains its exact byte range.
+    assert_eq!(
+        session.state().selected().unwrap().matches,
+        vec![7..11, 32..36]
+    );
+    assert_eq!(
+        session.state().preview.lines[3].matches,
+        vec![7..11, 32..36]
     );
 }
 
@@ -113,10 +124,14 @@ fn contents_validates_empty_fields_and_retains_shared_settings_across_modes() {
     settled(&mut session);
     session.command(Command::SetMode(SearchMode::Contents));
     settled(&mut session);
-    assert_eq!(session.state().query, "needle");
-    assert_eq!(session.state().include, "\\.rs$");
-    assert_eq!(session.state().exclude, "kept");
-    assert!(session.state().regex && session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().settings.query, "needle");
+    assert_eq!(session.state().settings.include, "\\.rs$");
+    assert_eq!(session.state().settings.exclude, "kept");
+    assert!(
+        session.state().settings.regex
+            && session.state().settings.hidden
+            && session.state().settings.ignored
+    );
     assert_eq!(session.state().results.len(), 2);
 }
 
@@ -338,12 +353,16 @@ fn back_restores_content_mode_regex_exact_line_and_preview_position() {
     settled(&mut session);
     session.command(Command::Back);
     settled(&mut session);
-    assert_eq!(session.state().mode, SearchMode::Contents);
-    assert!(session.state().regex && session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().settings.mode, SearchMode::Contents);
+    assert!(
+        session.state().settings.regex
+            && session.state().settings.hidden
+            && session.state().settings.ignored
+    );
     assert_eq!(session.state().selected(), before.selected());
-    assert_eq!(session.state().query, before.query);
-    assert_eq!(session.state().include, before.include);
-    assert_eq!(session.state().exclude, before.exclude);
+    assert_eq!(session.state().settings.query, before.settings.query);
+    assert_eq!(session.state().settings.include, before.settings.include);
+    assert_eq!(session.state().settings.exclude, before.settings.exclude);
     assert_eq!(session.state().preview, before.preview);
 }
 

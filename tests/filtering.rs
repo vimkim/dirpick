@@ -224,10 +224,10 @@ fn scopes_keep_filters_and_toggles_and_back_restores_the_previous_refinement() {
     settled(&mut session);
     session.command(Command::ToggleScope);
     settled(&mut session);
-    assert_eq!(session.state().query, "rs");
-    assert_eq!(session.state().include, r"\.rs$");
-    assert_eq!(session.state().exclude, "private");
-    assert!(session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().settings.query, "rs");
+    assert_eq!(session.state().settings.include, r"\.rs$");
+    assert_eq!(session.state().settings.exclude, "private");
+    assert!(session.state().settings.hidden && session.state().settings.ignored);
     assert_eq!(paths(&session), ["child.rs"]);
 
     session.command(Command::SetInclude(r"\.txt$".into()));
@@ -236,16 +236,16 @@ fn scopes_keep_filters_and_toggles_and_back_restores_the_previous_refinement() {
     session.command(Command::ToggleIgnored);
     session.command(Command::Back);
     settled(&mut session);
-    assert_eq!(session.state().include, r"\.rs$");
-    assert_eq!(session.state().exclude, "private");
-    assert!(session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().settings.include, r"\.rs$");
+    assert_eq!(session.state().settings.exclude, "private");
+    assert!(session.state().settings.hidden && session.state().settings.ignored);
     assert_eq!(paths(&session), ["nested/child.rs", "top.rs"]);
     session.command(Command::ApplyScope("nested".into()));
     settled(&mut session);
-    assert_eq!(session.state().query, "");
-    assert_eq!(session.state().include, r"\.rs$");
-    assert_eq!(session.state().exclude, "private");
-    assert!(session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().settings.query, "");
+    assert_eq!(session.state().settings.include, r"\.rs$");
+    assert_eq!(session.state().settings.exclude, "private");
+    assert!(session.state().settings.hidden && session.state().settings.ignored);
 }
 
 #[test]
@@ -454,7 +454,7 @@ fn explicit_hidden_and_symlink_scopes_resolve_but_git_metadata_remains_excluded(
     assert!(paths(&session).is_empty());
     session.command(Command::ApplyScope("chosen-link".into()));
     settled(&mut session);
-    assert_eq!(session.state().scope, root.path().join(".private"));
+    assert_eq!(session.state().settings.scope, root.path().join(".private"));
     assert_eq!(paths(&session), ["visible.rs"]);
     session.command(Command::ToggleHidden);
     session.command(Command::ToggleIgnored);

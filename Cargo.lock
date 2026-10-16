@@ -265,6 +265,7 @@ dependencies = [
  "shlex",
  "syntect",
  "tempfile",
+ "unicode-segmentation",
  "unicode-width",
 ]
 
