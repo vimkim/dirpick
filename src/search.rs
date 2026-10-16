@@ -10,8 +10,8 @@ use std::{
 };
 
 pub(crate) struct SearchRequest {
-    pub scope: PathBuf,
     pub mode: SearchMode,
+    pub scope: PathBuf,
     pub regex: bool,
     pub query: String,
     pub include: String,
@@ -118,7 +118,11 @@ pub(crate) fn run(
             break;
         }
         visited += 1;
-        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+        if !entry.file_type().is_some_and(|kind| match request.mode {
+            SearchMode::Files => kind.is_file(),
+            SearchMode::Directories => kind.is_dir(),
+            SearchMode::Contents => false,
+        }) {
             continue;
         }
         let relative_path = entry

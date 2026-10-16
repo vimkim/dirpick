@@ -24,6 +24,12 @@ never prevents traversal into a directory that could have matching descendants.
 An invalid pattern marks its field, explains the error, and clears stale results
 until the pattern is fixed, including when Query or the directory is empty.
 
+F1 selects Files and F2 selects Directories. Both use the same fuzzy path queries,
+filters, Hidden, and Ignored settings. Directory previews list immediate children
+using the active search scope's relative-path filters and visibility rules. Enter
+on a directory browses into it and clears only Query; Alt-Left restores the prior
+mode, scope, settings, selection, and preview position when available.
+
 F3 selects Contents mode: queries match literal text on individual lines by
 default. F4 toggles Regex. Queries use smart case in both settings; filters keep
 their independent regex and case rules. An empty content query shows guidance
@@ -37,18 +43,21 @@ arguments without shell evaluation. Vim and Neovim receive a separate +line
 argument before -- and the literal absolute path. Other editors can open file
 results; content locations require vim/nvim and show setup guidance for unsupported
 commands. The editor owns /dev/tty with normal terminal modes; success, nonzero
-exit, and spawn failure restore the search, selection, preview position, and TUI.
+exit, Ctrl-C interruption, and spawn failure restore the search, selection,
+preview position, and TUI.
 
-The [approved release spec](https://github.com/vimkim/dirpick/issues/1) also
-covers directory browsing and Nushell integration.
+Directory browsing and Nushell integration follow the
+[approved release spec](https://github.com/vimkim/dirpick/issues/1).
 
 ## Keys
 
 | Key | Effect |
 | --- | --- |
-| F1 / F3 | Select Files / Contents |
+| F1 / F2 / F3 | Select Files / Directories / Contents |
 | F4 | Toggle content Regex; retain it when changing modes |
 | Enter | Open the selected file or content line in the configured editor |
+| Enter on a directory | Browse inside Dirpick; clear only Query |
+| Ctrl-G | cd & exit for a directory through the Nushell wrapper |
 | Up / Down | Select a result |
 | PageUp / PageDown | Scroll the preview independently |
 | Ctrl-Y | Send the exact selected absolute path through OSC 52; keep searching |
@@ -76,7 +85,7 @@ Set `NO_COLOR` to use terminal default colors with selection markers and attribu
 
 Search and preview work run outside terminal input handling. Superseded searches
 cannot replace current results. A search visits at most 50,000 entries and retains
-the best 2,000 file paths. It continues scanning after the retention limit.
+the best 2,000 file or directory paths. It continues scanning after the retention limit.
 Contents retains at most the first 5,000 matching lines and skips files over
 2 MiB, binary files, and invalid UTF-8, with skipped and failed counts. Content
 results also have a 16 MiB aggregate memory budget for source/path bytes and
@@ -116,6 +125,36 @@ license for Dirpick itself.
 Dirpick uses `/dev/tty` for its interface and leaves stdout free of terminal output.
 Normal exit, input errors, failed terminal setup, and unwinding restore raw mode
 and the alternate screen where cleanup remains possible.
+
+## Nushell setup
+
+Install the command with `cargo install --path . --locked`. Generate the supplied
+wrapper and load it in Nushell:
+
+```nu
+dirpick --print-nu-wrapper | save -f ~/.config/nushell/dirpick.nu
+use ~/.config/nushell/dirpick.nu dp
+dp
+```
+
+To keep `dp` available in future shells, add that `use` line to your Nu config
+yourself. Dirpick does not edit shell configuration. The wrapper is embedded in
+the binary, so it remains available after a temporary Cargo installation without
+the source checkout or a separate data installation.
+
+Within `dp`, F2 searches directories, Enter browses without changing the shell,
+and Ctrl-G changes the invoking Nu directory and exits. The wrapper uses ordinary
+`cd`, preserving Nu's normal directory behavior. It passes decoded paths as data;
+the appended separator preserves names ending in spaces, tabs, or newlines.
+Cancellation, plain quitting, copying, or failed picker execution never changes
+PWD. Invalid JSON, unexpected keys/actions/types, relative paths, and unavailable
+directories are rejected before `cd`.
+
+The wrapper invokes `dirpick --json`. That explicit integration mode emits one
+`{"action":"cd","path":"/exact/absolute/path"}` record only for Ctrl-G on a
+directory; other exits emit nothing. The interface and clipboard traffic stay on
+`/dev/tty`. Direct `dirpick` invocation explains setup on Ctrl-G and keeps the
+session open. Redirecting `--json` alone cannot change a parent shell directory.
 
 ## Check and build
 

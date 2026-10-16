@@ -6,6 +6,7 @@ import os
 import pty
 import select
 import shlex
+import shutil
 import signal
 import struct
 import sys
@@ -26,6 +27,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-editor-") as temporary:
     editor_directory = os.path.join(temporary, "editor path")
     os.mkdir(editor_directory)
     editor = os.path.join(editor_directory, "nvim")
+    generic_editor = os.path.join(editor_directory, "generic")
     record = os.path.join(temporary, "editor.json")
     with open(editor, "w") as program:
         program.write("""#!/usr/bin/env python3
@@ -39,7 +41,9 @@ input()
 sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
 """)
     os.chmod(editor, 0o700)
-    for mode in ("success", "exit", "missing", "unsupported", "files"):
+    shutil.copyfile(editor, generic_editor)
+    os.chmod(generic_editor, 0o700)
+    for mode in ("success", "exit", "interrupt", "missing", "unsupported", "files", "generic"):
         if os.path.exists(record):
             os.unlink(record)
         stdout_read, stdout_write = os.pipe()
@@ -55,9 +59,11 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
             os.chdir(root)
             os.environ.update(TERM="xterm-256color", NO_COLOR="1", EDITOR_RECORD=record, EDITOR_TEST_MODE=mode)
             selected_editor = editor if mode not in ("missing", "unsupported") else os.path.join(temporary, "missing", "nvim" if mode == "missing" else "code")
+            if mode == "generic":
+                selected_editor = generic_editor
             os.environ["VISUAL"] = shlex.quote(selected_editor) + " 'literal $(no shell)'"
             os.environ["EDITOR"] = "/do/not/run/fallback"
-            os.execv(binary, [binary])
+            os.execv(binary, [binary, "--json"] if mode == "success" else [binary])
         os.close(stdout_write)
         os.close(ready_read)
         before = termios.tcgetattr(master)
@@ -91,7 +97,7 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
 
         try:
             wait_for("Results · 1")
-            if mode != "files":
+            if mode not in ("files", "generic"):
                 send(b"\x1bOR", "Type a content query")
                 send(b"needle", "needle 251")
                 wait_for("needle 260")
@@ -104,16 +110,17 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
                 send(b"\x1b[B", "Lines 250")
                 send(b"\x1b[6~", "Lines 260")
             os.write(master, b"\r")
-            if mode in ("success", "exit", "files"):
+            if mode in ("success", "exit", "interrupt", "files", "generic"):
                 wait_for("isolated editor owns terminal")
                 with open(record) as saved:
                     observed = json.load(saved)
-                line = 1 if mode == "files" else 260
-                assert observed["argv"] == ["literal $(no shell)", f"+{line}", "--", selected_path], observed
+                line = 1 if mode in ("files", "generic") else 260
+                expected = ["literal $(no shell)"] + ([] if mode == "generic" else [f"+{line}", "--"]) + [selected_path]
+                assert observed["argv"] == expected, observed
                 assert observed["tty"] == [True, True, True], observed
                 assert observed["canonical"] and observed["echo"], observed
                 assert b"\x1b[?1049l" in output, "Editor did not leave alternate screen"
-                send(b"return\n", "Editor failed" if mode == "exit" else "Editor closed")
+                send(b"\x03" if mode == "interrupt" else b"return\n", "Editor failed" if mode in ("exit", "interrupt") else "Editor closed")
             elif mode == "missing":
                 wait_for("Editor failed")
                 assert not os.path.exists(record)
@@ -121,7 +128,7 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
                 wait_for("Content locations require Vim/Neovim")
                 assert not os.path.exists(record)
             wait_for("search retained")
-            if mode != "files":
+            if mode not in ("files", "generic"):
                 wait_for("Query needle")
                 wait_for("Include \\.rs$")
                 wait_for("Lines 260")

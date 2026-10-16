@@ -3,6 +3,7 @@ use crate::{
     action::Action,
     preview::{self, PreviewRequest},
     search::{self, SearchRequest},
+    traversal::VisibilityPolicy,
     worker::Worker,
 };
 use std::{
@@ -42,12 +43,14 @@ pub enum ScopePreset {
 pub struct Options {
     pub git_program: Option<OsString>,
     pub limits: Limits,
+    pub shell_integration: bool,
 }
 impl Default for Options {
     fn default() -> Self {
         Self {
             git_program: Some("git".into()),
             limits: Limits::default(),
+            shell_integration: false,
         }
     }
 }
@@ -56,7 +59,9 @@ pub struct SearchResult {
     pub path: PathBuf,
     pub relative: String,
     pub line: usize,
+    /// Original matching source line; empty on file/directory path rows.
     pub text: String,
+    /// Every half-open raw UTF-8 match range in `text`.
     pub matches: Vec<std::ops::Range<usize>>,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -128,6 +133,7 @@ pub enum Command {
     SetMode(SearchMode),
     ToggleRegex,
     OpenSelected,
+    ChangeDirectory,
     SetQuery(String),
     SetInclude(String),
     SetExclude(String),
@@ -204,6 +210,7 @@ pub struct SearchSession {
     history: Vec<HistoryEntry>,
     restore: Option<(PathBuf, usize, usize)>,
     action: Option<Action>,
+    shell_integration: bool,
 }
 impl SearchSession {
     pub fn open(cwd: impl AsRef<Path>) -> io::Result<Self> {
@@ -287,6 +294,7 @@ impl SearchSession {
             history: Vec::new(),
             restore: None,
             action: None,
+            shell_integration: options.shell_integration,
         };
         session.refresh();
         Ok(session)
@@ -296,8 +304,34 @@ impl SearchSession {
     }
     pub fn command(&mut self, command: Command) {
         match command {
+            Command::ChangeDirectory => {
+                self.action = None;
+                if self.state.mode != SearchMode::Directories || self.state.selected().is_none() {
+                    self.state.message =
+                        "Select a directory in F2 Directories for cd & exit".into();
+                } else if !self.shell_integration {
+                    self.state.message = "Nushell setup: dirpick --print-nu-wrapper; use the dp wrapper for cd & exit".into();
+                } else if let Some(row) = self.state.selected() {
+                    if row.path.is_absolute() && row.path.to_str().is_some() {
+                        self.action = Some(Action::ChangeDirectory {
+                            path: row.path.clone(),
+                        });
+                    } else {
+                        self.state.message =
+                            "Cannot cd: JSON requires an absolute UTF-8 path".into();
+                    }
+                }
+            }
             Command::OpenSelected => {
                 self.action = None;
+                if self.state.mode == SearchMode::Directories {
+                    if let Some(row) = self.state.selected() {
+                        self.command(Command::ApplyScope(row.path.clone()));
+                    } else {
+                        self.state.message = "No directory selected to browse".into();
+                    }
+                    return;
+                }
                 if let Some(row) = self.state.selected() {
                     match crate::action::EditorCommand::from_environment(
                         &row.path,
@@ -437,6 +471,11 @@ impl SearchSession {
     }
     pub fn complete_action(&mut self, action: Action, result: io::Result<()>) {
         match action {
+            Action::ChangeDirectory { .. } => {
+                if let Err(error) = result {
+                    self.state.message = format!("Cannot cd & exit: {error} · search retained");
+                }
+            }
             Action::OpenEditor { .. } => {
                 self.state.message = match result {
                     Ok(()) => "Editor closed · search retained".into(),
@@ -674,6 +713,18 @@ impl SearchSession {
                 PreviewRequest {
                     path: row.path.clone(),
                     top: self.state.preview.top,
+                    directory_policy: (self.state.mode == SearchMode::Directories)
+                        .then(|| {
+                            VisibilityPolicy::compile(
+                                self.state.scope.clone(),
+                                &self.state.include,
+                                &self.state.exclude,
+                                self.state.hidden,
+                                self.state.ignored,
+                            )
+                            .ok()
+                        })
+                        .flatten(),
                     content_pattern: (self.state.mode == SearchMode::Contents)
                         .then(|| search::content_pattern(&self.state.query, self.state.regex).ok())
                         .flatten(),

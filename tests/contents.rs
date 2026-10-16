@@ -304,3 +304,84 @@ fn frequent_matches_in_long_lines_have_an_honest_aggregate_memory_bound() {
     assert_eq!(session.state().selected().unwrap().line, 1);
     assert!(!session.state().result_limit);
 }
+
+#[test]
+fn back_restores_content_mode_regex_exact_line_and_preview_position() {
+    let root = tempdir().unwrap();
+    fs::write(
+        root.path().join("source.rs"),
+        format!(
+            "{}needle one\n{}needle two\n",
+            "context\n".repeat(200),
+            "context\n".repeat(59)
+        ),
+    )
+    .unwrap();
+    let mut session = SearchSession::open(root.path()).unwrap();
+    session.command(Command::SetMode(SearchMode::Contents));
+    session.command(Command::ToggleRegex);
+    session.command(Command::SetQuery("needle.*".into()));
+    session.command(Command::SetInclude("\\.rs$".into()));
+    session.command(Command::SetExclude("excluded".into()));
+    session.command(Command::ToggleHidden);
+    session.command(Command::ToggleIgnored);
+    settled(&mut session);
+    session.command(Command::Select(1));
+    settled(&mut session);
+    session.command(Command::ScrollPreview(5));
+    settled(&mut session);
+    let before = session.state().clone();
+    session.command(Command::ToggleScope);
+    settled(&mut session);
+    session.command(Command::SetMode(SearchMode::Directories));
+    session.command(Command::ToggleRegex);
+    settled(&mut session);
+    session.command(Command::Back);
+    settled(&mut session);
+    assert_eq!(session.state().mode, SearchMode::Contents);
+    assert!(session.state().regex && session.state().hidden && session.state().ignored);
+    assert_eq!(session.state().selected(), before.selected());
+    assert_eq!(session.state().query, before.query);
+    assert_eq!(session.state().include, before.include);
+    assert_eq!(session.state().exclude, before.exclude);
+    assert_eq!(session.state().preview, before.preview);
+}
+
+#[test]
+fn zero_width_regex_spans_and_content_read_errors_remain_observable() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempdir().unwrap();
+    fs::write(root.path().join("empty-lines"), "start\n\n\nend\n").unwrap();
+    let private = root.path().join("unreadable");
+    fs::write(&private, "private needle\n").unwrap();
+    fs::set_permissions(&private, fs::Permissions::from_mode(0o0)).unwrap();
+    let denied = fs::File::open(&private).is_err();
+    let mut session = SearchSession::open(root.path()).unwrap();
+    session.command(Command::SetMode(SearchMode::Contents));
+    session.command(Command::ToggleRegex);
+    session.command(Command::SetQuery("^$".into()));
+    settled(&mut session);
+    assert_eq!(
+        session
+            .state()
+            .results
+            .iter()
+            .map(|row| row.line)
+            .collect::<Vec<_>>(),
+        vec![2, 3]
+    );
+    assert_eq!(session.state().selected().unwrap().matches, vec![0..0]);
+    assert_eq!(session.state().preview.lines[1].matches, vec![0..0]);
+    if denied {
+        assert_eq!(session.state().errors, 1);
+        assert!(
+            session
+                .state()
+                .scan_error
+                .as_ref()
+                .unwrap()
+                .contains("unreadable")
+        );
+    }
+    fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
+}

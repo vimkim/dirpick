@@ -218,8 +218,9 @@ impl Workbench {
         }
         match key.code {
             KeyCode::Esc => return true,
-            KeyCode::F(12) => self.help = true,
             KeyCode::F(1) => session.command(Command::SetMode(SearchMode::Files)),
+            KeyCode::F(2) => session.command(Command::SetMode(SearchMode::Directories)),
+            KeyCode::F(12) => self.help = true,
             KeyCode::F(3) => session.command(Command::SetMode(SearchMode::Contents)),
             KeyCode::F(4) => session.command(Command::ToggleRegex),
             KeyCode::F(10) => self.preview_pane = !self.preview_pane,
@@ -260,6 +261,9 @@ impl Workbench {
             }
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 session.command(Command::CopyPath)
+            }
+            KeyCode::Char('g') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                session.command(Command::ChangeDirectory)
             }
             KeyCode::Up => session.command(Command::MoveSelection(-1)),
             KeyCode::Down => session.command(Command::MoveSelection(1)),
@@ -339,7 +343,7 @@ impl Workbench {
                             "F3 Contents · F4 Regex:on · smart case"
                         }
                         SearchMode::Contents => "F3 Contents · F4 Regex:off · smart case",
-                        _ => "F1 Files · fuzzy · smart case",
+                        _ => "F1 Files · F2 Directories · fuzzy · smart case",
                     },
                     self.theme.accent,
                 )),
@@ -454,10 +458,10 @@ impl Workbench {
             format!(
                 "{} {} · {} visited · {} errors · {} skipped{}{}",
                 state.results.len(),
-                if state.mode == SearchMode::Contents {
-                    "matching lines"
-                } else {
-                    "files"
+                match state.mode {
+                    SearchMode::Files => "files",
+                    SearchMode::Directories => "directories",
+                    SearchMode::Contents => "matching lines",
                 },
                 state.visited,
                 state.errors,
@@ -487,8 +491,15 @@ impl Workbench {
                     self.theme.accent
                 },
             )),
-            Line::raw("↑↓ Select  PgUp/Dn Preview  F7 Scope  F10 Pane  F12 Help"),
-            Line::raw("Ctrl-Y Copy  Tab Fields  Ctrl-F/L Query/Scope  Alt-Left Back  Esc Quit"),
+            Line::raw(format!(
+                "↑↓ Select  Enter {}  PgUp/Dn Preview  F7 Scope  F10 Pane  F12 Help",
+                if state.mode == SearchMode::Directories {
+                    "Browse"
+                } else {
+                    "Editor"
+                }
+            )),
+            Line::raw("Ctrl-Y Copy  Ctrl-G cd & exit  Tab Fields  Alt-Left Back  Esc Quit"),
         ];
         if !state.message.is_empty() {
             lines.insert(
@@ -510,7 +521,7 @@ impl Workbench {
                 (area.height - 3).min(15),
             );
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nCtrl-Y: send exact absolute path through OSC 52\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF1 / F3: Files / Contents; F4: content Regex\nEnter: open selected file or match in editor\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
+            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nCtrl-Y: send exact absolute path through OSC 52\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF1/F2/F3: Files/Directories/Contents; F4: Regex\nEnter: browse or open editor; Ctrl-G: cd & exit\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
         }
     }
     fn field(
@@ -613,7 +624,10 @@ impl Workbench {
                 } else if state.mode == SearchMode::Contents {
                     "No matching lines"
                 } else {
-                    "No matching files"
+                    match state.mode {
+                        SearchMode::Directories => "No matching directories",
+                        _ => "No matching files",
+                    }
                 })
                 .style(self.theme.dim),
                 area.inner(ratatui::layout::Margin::new(2, 2)),
@@ -663,11 +677,16 @@ impl Workbench {
         };
         frame.render_widget(Paragraph::new(lines).style(self.theme.base), source_area);
         if inner.height > 0 {
-            let label = if state.preview.lines.is_empty() {
+            let label = if state.preview.loading || state.preview.lines.is_empty() {
                 String::new()
             } else {
                 format!(
-                    "Lines {}–{}/{} · PgUp/Dn{}{}",
+                    "{} {}–{}/{} · PgUp/Dn{}{}",
+                    if state.mode == SearchMode::Directories {
+                        "Children"
+                    } else {
+                        "Lines"
+                    },
                     state.preview.top + 1,
                     state.preview.top + state.preview.lines.len(),
                     state.preview.total_lines,

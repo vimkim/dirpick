@@ -62,6 +62,12 @@ fn editor_arguments_preserve_native_paths_and_resolve_precedence_without_shell_e
             .to_string()
             .contains("quot")
     );
+    assert!(
+        EditorCommand::resolve(Some(OsStr::new("nvim --")), None, path, 42, true)
+            .unwrap_err()
+            .to_string()
+            .contains("Remove --")
+    );
     let unsupported =
         EditorCommand::resolve(Some(OsStr::new("code --wait")), None, path, 2, true).unwrap_err();
     assert!(unsupported.to_string().contains("Vim/Neovim"));

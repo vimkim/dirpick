@@ -33,10 +33,15 @@ impl TerminalSession {
     }
     pub fn perform(&mut self, action: &crate::action::Action) -> io::Result<()> {
         match action {
-            crate::action::Action::CopyPath { .. } => action.write_to(&mut self.cleanup),
+            crate::action::Action::CopyPath { .. }
+            | crate::action::Action::ChangeDirectory { .. } => action.write_to(&mut self.cleanup),
             crate::action::Action::OpenEditor { path, line } => {
                 let command =
                     crate::action::EditorCommand::from_environment(path, *line, *line > 1)?;
+                // Canonical tty interrupts reach the entire foreground process
+                // group. Catch them in the picker while the child runs; exec
+                // resets caught handlers so the editor still receives Ctrl-C.
+                let _signals = EditorSignals::capture()?;
                 let result = (|| {
                     self.cleanup.flush()?;
                     execute!(self.cleanup, LeaveAlternateScreen, Show)?;
@@ -70,5 +75,38 @@ impl Drop for TerminalSession {
         let _ = disable_raw_mode();
         let _ = execute!(self.cleanup, LeaveAlternateScreen, Show);
         let _ = self.cleanup.flush();
+    }
+}
+
+struct EditorSignals {
+    saved: Vec<(libc::c_int, libc::sigaction)>,
+}
+extern "C" fn keep_picker_alive(_signal: libc::c_int) {}
+impl EditorSignals {
+    fn capture() -> io::Result<Self> {
+        let mut guard = Self { saved: Vec::new() };
+        for signal in [libc::SIGINT, libc::SIGQUIT] {
+            // SAFETY: zeroed sigaction is initialized below, and all pointers
+            // passed to libc refer to valid local sigaction/sigset_t values.
+            let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+            let mut previous: libc::sigaction = unsafe { std::mem::zeroed() };
+            action.sa_sigaction = keep_picker_alive as *const () as libc::sighandler_t;
+            action.sa_flags = libc::SA_RESTART;
+            unsafe { libc::sigemptyset(&mut action.sa_mask) };
+            if unsafe { libc::sigaction(signal, &action, &mut previous) } != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            guard.saved.push((signal, previous));
+        }
+        Ok(guard)
+    }
+}
+impl Drop for EditorSignals {
+    fn drop(&mut self) {
+        for (signal, previous) in self.saved.iter().rev() {
+            // SAFETY: restore each previously captured disposition. The main
+            // event thread owns this scoped guard through terminal reacquisition.
+            unsafe { libc::sigaction(*signal, previous, std::ptr::null_mut()) };
+        }
     }
 }

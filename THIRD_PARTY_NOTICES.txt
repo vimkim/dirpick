@@ -1,6 +1,6 @@
-Third-party notices for Dirpick syntax previews and clipboard transport
+Third-party notices for Dirpick syntax previews and action transports
 
-This file covers the bundled syntax data and dependencies introduced for previews and OSC 52. It does not assign a license to Dirpick itself. Cargo.lock identifies dependency versions and checksums.
+This file covers the bundled syntax data and dependencies introduced for previews, OSC 52, and JSON directory actions. It does not assign a license to Dirpick itself. Cargo.lock identifies dependency versions and checksums.
 
 Syntect 5.3.0 embeds assets/default_newlines.packdump; no external syntax files are needed at runtime. Its release Makefile builds that pack from sublimehq/Packages at revision fa6b8629c95041bf262d4c1dab95c456a0530122. The default theme dump is not enabled; Dirpick constructs its own theme from the approved Mocha palette.
 
@@ -8,6 +8,38 @@ Sources:
 https://github.com/trishume/syntect/tree/v5.3.0
 https://github.com/trishume/syntect/blob/v5.3.0/Makefile
 https://github.com/sublimehq/Packages/tree/fa6b8629c95041bf262d4c1dab95c456a0530122
+
+
+========================================================================
+serde_json-1.0.151 (MIT option) and zmij-1.0.23 (MIT)
+https://crates.io/crates/serde_json/1.0.151
+https://crates.io/crates/zmij/1.0.23
+
+Both crates supply the following MIT license text:
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 
 
 ========================================================================
@@ -527,3 +559,34 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+
+========================================================================
+libc-0.2.190
+https://crates.io/crates/libc/0.2.190
+
+Copyright (c) The Rust Project Developers
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
