@@ -91,8 +91,12 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
             wait_for("nested-child/")
             send(b"\r", "[Custom]")
             wait_for("Query destination", absent=True)
+            if columns < 100:
+                send(b"\x1b[21~", "nested-child")  # Results identify the child even with a long scope title.
             wait_for("nested-child")
             send(b"\x1b[1;3D", "Query destination")  # Alt-Left
+            if columns < 100:
+                send(b"\x1b[21~", "nested-child/")
             wait_for("nested-child/")
             if not integration:
                 send(b"\x07", "--print-nu-wrapper")
