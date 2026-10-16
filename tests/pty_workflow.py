@@ -208,4 +208,3 @@ input()
             assert picker.finish() == b""
         finally:
             picker.close()
-

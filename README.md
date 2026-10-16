@@ -175,6 +175,7 @@ session open. Redirecting `--json` alone cannot change a parent shell directory.
 ## Check and build
 
 ```sh
+cargo fetch --locked
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
