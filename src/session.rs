@@ -71,6 +71,12 @@ pub struct State {
     pub project_fallback: bool,
     pub preset: ScopePreset,
     pub query: String,
+    pub include: String,
+    pub exclude: String,
+    pub include_error: Option<String>,
+    pub exclude_error: Option<String>,
+    pub hidden: bool,
+    pub ignored: bool,
     pub results: Vec<SearchResult>,
     pub selected_index: usize,
     pub generation: u64,
@@ -79,6 +85,7 @@ pub struct State {
     pub visited: usize,
     pub matched: usize,
     pub errors: usize,
+    pub scan_error: Option<String>,
     pub entry_limit: bool,
     pub result_limit: bool,
     pub preview: Preview,
@@ -92,6 +99,10 @@ impl State {
 #[derive(Debug)]
 pub enum Command {
     SetQuery(String),
+    SetInclude(String),
+    SetExclude(String),
+    ToggleHidden,
+    ToggleIgnored,
     Select(usize),
     MoveSelection(isize),
     ScrollPreview(isize),
@@ -101,6 +112,15 @@ pub enum Command {
 }
 #[derive(Clone, Debug)]
 pub enum SearchEvent {
+    ScanError {
+        generation: u64,
+        message: String,
+    },
+    InvalidFilters {
+        generation: u64,
+        include: Option<String>,
+        exclude: Option<String>,
+    },
     Results {
         generation: u64,
         rows: Vec<SearchResult>,
@@ -123,6 +143,10 @@ struct HistoryEntry {
     scope: PathBuf,
     preset: ScopePreset,
     query: String,
+    include: String,
+    exclude: String,
+    hidden: bool,
+    ignored: bool,
     target: Option<(PathBuf, usize)>,
 }
 
@@ -167,6 +191,12 @@ impl SearchSession {
                 project_fallback,
                 preset: ScopePreset::Project,
                 query: String::new(),
+                include: String::new(),
+                exclude: String::new(),
+                include_error: None,
+                exclude_error: None,
+                hidden: false,
+                ignored: false,
                 results: Vec::new(),
                 selected_index: 0,
                 generation: 0,
@@ -175,6 +205,7 @@ impl SearchSession {
                 visited: 0,
                 matched: 0,
                 errors: 0,
+                scan_error: None,
                 entry_limit: false,
                 result_limit: false,
                 preview: Preview::default(),
@@ -242,6 +273,10 @@ impl SearchSession {
                     self.state.scope = previous.scope;
                     self.state.preset = previous.preset;
                     self.state.query = previous.query;
+                    self.state.include = previous.include;
+                    self.state.exclude = previous.exclude;
+                    self.state.hidden = previous.hidden;
+                    self.state.ignored = previous.ignored;
                     self.refresh();
                     self.restore = target;
                     self.state.message = "Previous scope and search restored".into();
@@ -254,6 +289,26 @@ impl SearchSession {
                     self.state.query = query;
                     self.refresh();
                 }
+            }
+            Command::SetInclude(include) => {
+                if self.state.include != include {
+                    self.state.include = include;
+                    self.refresh();
+                }
+            }
+            Command::SetExclude(exclude) => {
+                if self.state.exclude != exclude {
+                    self.state.exclude = exclude;
+                    self.refresh();
+                }
+            }
+            Command::ToggleHidden => {
+                self.state.hidden = !self.state.hidden;
+                self.refresh();
+            }
+            Command::ToggleIgnored => {
+                self.state.ignored = !self.state.ignored;
+                self.refresh();
             }
             Command::Select(index) => self.select(index),
             Command::MoveSelection(delta) => {
@@ -284,6 +339,21 @@ impl SearchSession {
     /// Accept a worker event only while its identity still belongs to this session.
     pub fn apply_event(&mut self, event: SearchEvent) {
         match event {
+            SearchEvent::ScanError {
+                generation,
+                message,
+            } if generation == self.state.generation => {
+                self.state.scan_error = Some(message);
+            }
+            SearchEvent::InvalidFilters {
+                generation,
+                include,
+                exclude,
+            } if generation == self.state.generation => {
+                self.state.scanning = false;
+                self.state.include_error = include;
+                self.state.exclude_error = exclude;
+            }
             SearchEvent::Results {
                 generation,
                 rows,
@@ -361,6 +431,10 @@ impl SearchSession {
             scope: self.state.scope.clone(),
             preset: self.state.preset,
             query: self.state.query.clone(),
+            include: self.state.include.clone(),
+            exclude: self.state.exclude.clone(),
+            hidden: self.state.hidden,
+            ignored: self.state.ignored,
             target: self
                 .state
                 .selected()
@@ -397,8 +471,11 @@ impl SearchSession {
         self.state.visited = 0;
         self.state.matched = 0;
         self.state.errors = 0;
+        self.state.scan_error = None;
         self.state.entry_limit = false;
         self.state.result_limit = false;
+        self.state.include_error = None;
+        self.state.exclude_error = None;
         self.preview_id += 1;
         self.preview.cancel(self.preview_id);
         self.state.preview = Preview::default();
@@ -407,6 +484,10 @@ impl SearchSession {
             SearchRequest {
                 scope: self.state.scope.clone(),
                 query: self.state.query.clone(),
+                include: self.state.include.clone(),
+                exclude: self.state.exclude.clone(),
+                hidden: self.state.hidden,
+                ignored: self.state.ignored,
                 limits: self.limits,
             },
         );

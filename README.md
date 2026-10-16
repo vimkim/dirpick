@@ -17,9 +17,16 @@ Type whitespace-separated fuzzy path fragments in Query. Uppercase characters
 make the query case-sensitive. Exact basenames rank before basename prefixes,
 then other fuzzy matches. An empty query lists files in relative-path order.
 
-The current build implements Files mode and plain source previews.
+Include and Exclude are regex filters over slash-separated paths relative to the
+active scope. Each filter uses smart case independently of Query. Empty filters
+leave paths unconstrained. Exclude wins and prunes matching directories; Include
+never prevents traversal into a directory that could have matching descendants.
+An invalid pattern marks its field, explains the error, and clears stale results
+until the pattern is fixed, including when Query or the directory is empty.
+
+The current build implements Files mode, path filters, and plain source previews.
 The [approved release spec](https://github.com/vimkim/dirpick/issues/1) also
-covers directory/content modes, filters, syntax colors, and external actions.
+covers directory/content modes, syntax colors, and external actions.
 Those features arrive in subsequent implementation tickets.
 
 ## Keys
@@ -29,12 +36,14 @@ Those features arrive in subsequent implementation tickets.
 | Up / Down | Select a file |
 | PageUp / PageDown | Scroll the preview independently |
 | F7 | Switch Project / launch CWD, retaining the query |
-| Tab / Shift-Tab | Move between Query and Scope |
+| F8 | Reveal / hide dotfiles and dot directories |
+| F9 | Bypass / respect ignore rules |
+| Tab / Shift-Tab | Cycle Query, Include, Exclude, and Scope |
 | Ctrl-F / Ctrl-L | Focus Query / Scope |
 | Ctrl-U | Clear the focused field |
 | Left / Right / Home / End | Move the field cursor |
-| Enter in Scope | Apply a directory and clear Query |
-| Alt-Left | Restore the previous scope, query, selection, and preview position |
+| Enter in Scope | Apply a directory and clear only Query |
+| Alt-Left | Restore the previous scope, fields, toggles, selection, and preview position |
 | F10 | Switch Results / Preview below 100 columns |
 | F12 | Show keyboard help |
 | Esc | Close help, or quit |
@@ -42,6 +51,7 @@ Those features arrive in subsequent implementation tickets.
 
 Relative scope paths resolve against the active scope. Invalid paths retain the
 active search and show an error. CWD always means the original launch directory.
+Scope changes retain Include, Exclude, Hidden, and Ignored settings.
 The interface supports terminals of at least 70 columns and 18 rows.
 Set `NO_COLOR` to use terminal default colors with selection markers and attributes.
 
@@ -52,9 +62,15 @@ cannot replace current results. A search visits at most 50,000 entries and retai
 the best 2,000 file paths. It continues scanning after the retention limit.
 The status line identifies scanning, errors, and partial results.
 
-Traversal respects ignore files and hides dot entries. It excludes `.git` files
-and directories and skips symlink entries. Binary and invalid UTF-8 files remain
-searchable, with a preview status instead of source text.
+Traversal respects `.gitignore`, `.ignore`, `.rgignore`, and Git exclude rules,
+including parent rules for nested CWD and Custom scopes. Hidden and Ignored are
+independent: ignore-file whitelists cannot reveal dot entries while Hidden is off.
+Explicit path filters apply with either toggle enabled. Traversal always excludes
+`.git` files and directories and skips symlink entries, including cycles. A scope
+explicitly selected through a symlink resolves to its target. Permission failures
+and vanished paths count as scan errors and show the first affected path.
+Binary and invalid UTF-8 files remain searchable, with a preview status instead
+of source text.
 Previews support files up to 2 MiB. Each preview window contains at most 200 lines
 and 64 KiB. Control characters appear as visible escapes.
 
@@ -73,7 +89,8 @@ cargo build --release --locked
 
 Tests use real filesystem and Git fixtures at the application session boundary.
 The focused Linux PTY check also requires Python 3 from the system.
-It verifies real input, preview, help, narrow panes, `NO_COLOR`, and terminal flags.
+It verifies real input, path-filter editing and errors, independent traversal
+toggles, preview, help, narrow panes, `NO_COLOR`, and terminal flags.
 
 Test installation without replacing an active command:
 

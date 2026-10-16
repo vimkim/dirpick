@@ -16,6 +16,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
     Query,
+    Include,
+    Exclude,
     Scope,
 }
 #[derive(Default)]
@@ -142,6 +144,8 @@ impl Theme {
 pub struct Workbench {
     focus: Focus,
     query: Field,
+    include: Field,
+    exclude: Field,
     scope: Field,
     help: bool,
     preview_pane: bool,
@@ -154,6 +158,8 @@ impl Workbench {
         let mut ui = Self {
             focus: Focus::Query,
             query: Field::default(),
+            include: Field::default(),
+            exclude: Field::default(),
             scope: Field::default(),
             help: false,
             preview_pane: false,
@@ -166,6 +172,8 @@ impl Workbench {
     }
     fn sync(&mut self, session: &SearchSession) {
         self.query.set(session.state().query.clone());
+        self.include.set(session.state().include.clone());
+        self.exclude.set(session.state().exclude.clone());
         self.scope
             .set(session.state().scope.to_string_lossy().into_owned());
     }
@@ -182,8 +190,16 @@ impl Workbench {
         if self.observed_scope != session.state().scope {
             self.sync(session);
             self.observed_scope = session.state().scope.clone();
-        } else if self.query.text != session.state().query {
-            self.query.set(session.state().query.clone());
+        } else {
+            if self.query.text != session.state().query {
+                self.query.set(session.state().query.clone());
+            }
+            if self.include.text != session.state().include {
+                self.include.set(session.state().include.clone());
+            }
+            if self.exclude.text != session.state().exclude {
+                self.exclude.set(session.state().exclude.clone());
+            }
         }
     }
     /// Return true only when the user requests exit.
@@ -205,15 +221,29 @@ impl Workbench {
                 session.command(Command::ToggleScope);
                 self.sync(session);
             }
+            KeyCode::F(8) => session.command(Command::ToggleHidden),
+            KeyCode::F(9) => session.command(Command::ToggleIgnored),
             KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
                 session.command(Command::Back);
                 self.sync(session);
             }
             KeyCode::Tab | KeyCode::BackTab => {
-                self.focus = if self.focus == Focus::Query {
-                    Focus::Scope
+                let reverse =
+                    key.code == KeyCode::BackTab || key.modifiers.contains(KeyModifiers::SHIFT);
+                self.focus = if reverse {
+                    match self.focus {
+                        Focus::Query => Focus::Scope,
+                        Focus::Include => Focus::Query,
+                        Focus::Exclude => Focus::Include,
+                        Focus::Scope => Focus::Exclude,
+                    }
                 } else {
-                    Focus::Query
+                    match self.focus {
+                        Focus::Query => Focus::Include,
+                        Focus::Include => Focus::Exclude,
+                        Focus::Exclude => Focus::Scope,
+                        Focus::Scope => Focus::Query,
+                    }
                 }
             }
             KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -231,13 +261,23 @@ impl Workbench {
                 session.command(Command::ApplyScope(self.scope.text.clone().into()));
             }
             _ => {
-                let field = if self.focus == Focus::Query {
-                    &mut self.query
-                } else {
-                    &mut self.scope
+                let field = match self.focus {
+                    Focus::Query => &mut self.query,
+                    Focus::Include => &mut self.include,
+                    Focus::Exclude => &mut self.exclude,
+                    Focus::Scope => &mut self.scope,
                 };
-                if field.edit(key) && self.focus == Focus::Query {
-                    session.command(Command::SetQuery(self.query.text.clone()));
+                if field.edit(key) {
+                    match self.focus {
+                        Focus::Query => session.command(Command::SetQuery(self.query.text.clone())),
+                        Focus::Include => {
+                            session.command(Command::SetInclude(self.include.text.clone()))
+                        }
+                        Focus::Exclude => {
+                            session.command(Command::SetExclude(self.exclude.text.clone()))
+                        }
+                        Focus::Scope => {}
+                    }
                 }
             }
         }
@@ -276,7 +316,7 @@ impl Workbench {
         frame.render_widget(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" Search ")
+                .title(" Search · regex filters ")
                 .border_style(self.theme.dim),
             controls[0],
         );
@@ -287,7 +327,6 @@ impl Workbench {
                     self.theme.accent,
                 )),
                 Line::raw(""),
-                Line::raw("F7 scope · recursive files"),
             ])
             .style(self.theme.dim),
             search_inner,
@@ -299,6 +338,23 @@ impl Workbench {
             "Query",
             &self.query,
             self.focus == Focus::Query,
+            false,
+        );
+        self.field(
+            frame,
+            Rect::new(search_inner.x, search_inner.y + 2, search_inner.width, 1),
+            "Include",
+            &self.include,
+            self.focus == Focus::Include,
+            state.include_error.is_some(),
+        );
+        self.field(
+            frame,
+            Rect::new(search_inner.x, search_inner.y + 3, search_inner.width, 1),
+            "Exclude",
+            &self.exclude,
+            self.focus == Focus::Exclude,
+            state.exclude_error.is_some(),
         );
         frame.render_widget(
             Block::default()
@@ -314,6 +370,7 @@ impl Workbench {
             "Scope",
             &self.scope,
             self.focus == Focus::Scope,
+            false,
         );
         let preset = match state.preset {
             ScopePreset::Project => "[Project]  CWD",
@@ -321,18 +378,28 @@ impl Workbench {
             ScopePreset::Custom => "Project  CWD  [Custom]",
         };
         let fallback = if state.project_fallback {
-            " · Git unavailable/outside Git; using CWD"
+            " · CWD fallback"
         } else {
             ""
         };
         frame.render_widget(
             Paragraph::new(vec![
-                Line::from(Span::styled(format!("F7 {preset}"), self.theme.accent)),
+                Line::from(Span::styled(
+                    format!("F7 {preset}{fallback}"),
+                    self.theme.accent,
+                )),
+                Line::from(Span::styled(
+                    format!(
+                        "F8 Hidden:{} F9 Ignored:{}",
+                        if state.hidden { "on" } else { "off" },
+                        if state.ignored { "on" } else { "off" }
+                    ),
+                    self.theme.accent,
+                )),
                 Line::raw(format!(
                     "Launch CWD: {}",
                     display_text(&state.launch_cwd.to_string_lossy())
                 )),
-                Line::raw(fallback),
             ])
             .style(self.theme.dim),
             Rect::new(scope_inner.x, scope_inner.y + 1, scope_inner.width, 3),
@@ -349,7 +416,12 @@ impl Workbench {
         } else {
             self.results(frame, vertical[2], session);
         }
-        let mut status = if state.scope_loading {
+        let invalid_filters = state.include_error.is_some() || state.exclude_error.is_some();
+        let mut status = if let Some(error) = &state.include_error {
+            format!("Invalid include regex: {error}")
+        } else if let Some(error) = &state.exclude_error {
+            format!("Invalid exclude regex: {error}")
+        } else if state.scope_loading {
             "Validating scope… current search retained".into()
         } else if state.scanning {
             format!(
@@ -375,6 +447,10 @@ impl Workbench {
                 }
             )
         };
+        if let Some(error) = &state.scan_error {
+            status.push_str(" · ");
+            status.push_str(&display_text(error));
+        }
         if !state.message.is_empty() {
             status.push_str(" · ");
             status.push_str(&state.message);
@@ -382,28 +458,47 @@ impl Workbench {
         let lines = vec![
             Line::from(Span::styled(
                 status,
-                if state.errors > 0 || state.entry_limit || state.result_limit {
+                if invalid_filters || state.errors > 0 || state.entry_limit || state.result_limit {
                     self.theme.error
                 } else {
                     self.theme.accent
                 },
             )),
-            Line::raw("↑↓ Select  PgUp/Dn Preview  F7 Project/CWD  F10 Pane  F12 Help"),
+            Line::raw("↑↓ Select  PgUp/Dn Preview  F7 Scope  F8 Hidden  F9 Ignored  F12 Help"),
             Line::raw("Tab Fields  Ctrl-F Query  Ctrl-L Scope  Alt-Left Back  Esc Quit"),
         ];
         frame.render_widget(Paragraph::new(lines).style(self.theme.dim), vertical[3]);
         if self.help {
             let popup = Rect::new(area.x + 4, area.y + 3, area.width - 8, 12);
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query and Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select a file\nPageUp / PageDown: scroll preview\nF7: Project / immutable launch CWD\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
+            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
         }
     }
-    fn field(&self, frame: &mut Frame, area: Rect, label: &str, field: &Field, focused: bool) {
-        let prefix = format!("{} {label} ", if focused { ">" } else { " " });
+    fn field(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        label: &str,
+        field: &Field,
+        focused: bool,
+        invalid: bool,
+    ) {
+        let prefix = format!(
+            "{} {label} ",
+            if invalid {
+                "!"
+            } else if focused {
+                ">"
+            } else {
+                " "
+            }
+        );
         let available = usize::from(area.width).saturating_sub(prefix.width());
         let (text, cursor) = field.visible(available);
         frame.render_widget(
-            Paragraph::new(format!("{prefix}{text}")).style(if focused {
+            Paragraph::new(format!("{prefix}{text}")).style(if invalid {
+                self.theme.error
+            } else if focused {
                 self.theme.selected
             } else {
                 self.theme.base
@@ -442,6 +537,8 @@ impl Workbench {
             frame.render_widget(
                 Paragraph::new(if state.scanning {
                     "Scanning…"
+                } else if state.include_error.is_some() || state.exclude_error.is_some() {
+                    "Invalid filters · edit marked fields"
                 } else {
                     "No matching files"
                 })

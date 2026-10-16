@@ -1,5 +1,6 @@
 use crate::{
     session::{Limits, SearchEvent, SearchResult},
+    traversal::VisibilityPolicy,
     worker::Cancellation,
 };
 use std::{
@@ -11,6 +12,10 @@ use std::{
 pub(crate) struct SearchRequest {
     pub scope: PathBuf,
     pub query: String,
+    pub include: String,
+    pub exclude: String,
+    pub hidden: bool,
+    pub ignored: bool,
     pub limits: Limits,
 }
 
@@ -43,31 +48,62 @@ pub(crate) fn run(
     tx: &SyncSender<SearchEvent>,
     cancel: Cancellation,
 ) {
+    let policy = match VisibilityPolicy::compile(
+        request.scope.clone(),
+        &request.include,
+        &request.exclude,
+        request.hidden,
+        request.ignored,
+    ) {
+        Ok(filters) => filters,
+        Err(errors) => {
+            deliver(
+                tx,
+                SearchEvent::InvalidFilters {
+                    generation,
+                    include: errors.include,
+                    exclude: errors.exclude,
+                },
+                &cancel,
+                true,
+            );
+            return;
+        }
+    };
     let mut retained = BTreeMap::new();
     let (mut visited, mut matched, mut errors) = (0, 0, 0);
     let mut entry_limit = false;
-    let mut walker = ignore::WalkBuilder::new(&request.scope);
-    walker
-        .follow_links(false)
-        .hidden(false)
-        .add_custom_ignore_filename(".rgignore")
-        .filter_entry(|entry| {
-            entry.file_name() != ".git"
-                && (entry.depth() == 0
-                    || (!entry.file_name().to_string_lossy().starts_with('.')
-                        && !entry.file_type().is_some_and(|kind| kind.is_symlink())))
-        });
-    for entry in walker.build() {
+    let mut reported_error = false;
+    let mut report = |error: &ignore::Error| {
+        if !reported_error {
+            deliver(
+                tx,
+                SearchEvent::ScanError {
+                    generation,
+                    message: error.to_string(),
+                },
+                &cancel,
+                true,
+            );
+            reported_error = true;
+        }
+    };
+    for entry in policy.walker(&request.scope, cancel.clone()).build() {
         if cancel.cancelled() {
             return;
         }
         let entry = match entry {
             Ok(entry) => entry,
-            Err(_) => {
+            Err(error) => {
                 errors += 1;
+                report(&error);
                 continue;
             }
         };
+        if let Some(error) = entry.error() {
+            errors += 1;
+            report(error);
+        }
         if entry.depth() == 0 {
             continue;
         }
@@ -85,6 +121,9 @@ pub(crate) fn run(
             .unwrap()
             .to_owned();
         let relative = relative_path.to_string_lossy().into_owned();
+        if !policy.accepts(&relative) {
+            continue;
+        }
         let Some(score) = rank(&request.query, &relative) else {
             continue;
         };
