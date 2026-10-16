@@ -1,0 +1,14 @@
+[package]
+name = "dirpick"
+version = "0.1.0"
+edition = "2024"
+description = "A terminal workbench for finding and previewing paths"
+
+[dependencies]
+crossterm = "=0.29.0"
+ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm_0_29"] }
+ignore = "=0.4.25"
+unicode-width = "=0.2.2"
+
+[dev-dependencies]
+tempfile = "=3.27.0"
