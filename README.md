@@ -179,8 +179,14 @@ the original terminal modes even if a failed editor leaves the terminal raw.
 
 ## Nushell setup
 
-Install the command with `cargo install --path . --locked`. Generate the supplied
-wrapper and load it in Nushell:
+Run `just sync` to build and install this checkout into `~/.local/bin`, then check
+the installed command's version. The recipe uses the locked dependencies and
+finds Cargo on PATH or in `~/.cargo/bin`. Add `~/.local/bin` to PATH if needed.
+It installs the current sources without fetching Git changes or editing shell
+configuration. Without Just, run
+`cargo install --locked --path . --root "$HOME/.local" --bin dirpick`.
+
+Generate the supplied wrapper and load it in Nushell:
 
 ```nu
 dirpick --print-nu-wrapper | save -f ~/.config/nushell/dirpick.nu
