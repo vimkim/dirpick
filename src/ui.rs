@@ -87,13 +87,14 @@ impl Field {
         let mut skip = before.width().saturating_sub(width.saturating_sub(1));
         let mut visible = String::new();
         let mut removed = 0;
-        for character in display_text(&self.text).chars() {
-            let cells = character.width().unwrap_or(0);
+        let displayed = Span::raw(display_text(&self.text));
+        for grapheme in displayed.styled_graphemes(Style::default()) {
+            let cells = grapheme.symbol.width();
             if skip > 0 {
                 skip = skip.saturating_sub(cells);
                 removed += cells;
             } else {
-                visible.push(character);
+                visible.push_str(grapheme.symbol);
             }
         }
         (
@@ -208,6 +209,12 @@ impl Workbench {
                 self.exclude.set(session.state().exclude.clone());
             }
         }
+    }
+    pub fn resize(&self, session: &mut SearchSession, height: u16) {
+        // Header/settings: 7 rows; footer: 3; preview border/status: 3.
+        session.command(Command::SetPreviewRows(usize::from(
+            height.saturating_sub(13),
+        )));
     }
     /// Return true only when the user requests exit.
     pub fn key(&mut self, session: &mut SearchSession, key: KeyEvent) -> bool {
@@ -580,14 +587,21 @@ impl Workbench {
             let width = usize::from(popup.width.saturating_sub(2));
             for line in help.lines() {
                 let (mut text, mut cells) = (String::new(), 0);
-                for character in line.chars() {
-                    let next = character.width().unwrap_or(0);
-                    if cells + next > width {
+                for word in line.split_inclusive(' ') {
+                    if cells > 0 && word.width() <= width && cells + word.width() > width {
                         lines.push(Line::raw(std::mem::take(&mut text)));
                         cells = 0;
                     }
-                    text.push(character);
-                    cells += next;
+                    let word = Span::raw(word);
+                    for grapheme in word.styled_graphemes(Style::default()) {
+                        let next = grapheme.symbol.width();
+                        if cells + next > width {
+                            lines.push(Line::raw(std::mem::take(&mut text)));
+                            cells = 0;
+                        }
+                        text.push_str(grapheme.symbol);
+                        cells += next;
+                    }
                 }
                 lines.push(Line::raw(text));
             }

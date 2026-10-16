@@ -141,6 +141,8 @@ pub enum Command {
     ToggleIgnored,
     Select(usize),
     MoveSelection(isize),
+    /// Number of source/child rows visible in the preview, excluding its chrome.
+    SetPreviewRows(usize),
     ScrollPreview(isize),
     ToggleScope,
     ApplyScope(PathBuf),
@@ -195,7 +197,14 @@ struct HistoryEntry {
     exclude: String,
     hidden: bool,
     ignored: bool,
-    target: Option<(PathBuf, usize, usize)>,
+    target: Option<SelectionTarget>,
+}
+
+struct SelectionTarget {
+    path: PathBuf,
+    line: usize,
+    top: usize,
+    following_selection: bool,
 }
 
 pub struct SearchSession {
@@ -208,7 +217,9 @@ pub struct SearchSession {
     scope_worker: Worker<PathBuf>,
     scope_id: u64,
     history: Vec<HistoryEntry>,
-    restore: Option<(PathBuf, usize, usize)>,
+    restore: Option<SelectionTarget>,
+    preview_rows: usize,
+    preview_follows_selection: bool,
     action: Option<Action>,
     shell_integration: bool,
 }
@@ -293,6 +304,8 @@ impl SearchSession {
             }),
             history: Vec::new(),
             restore: None,
+            preview_rows: 20,
+            preview_follows_selection: true,
             action: None,
             shell_integration: options.shell_integration,
         };
@@ -450,13 +463,29 @@ impl SearchSession {
                 self.select(self.state.selected_index.saturating_add_signed(delta))
             }
             Command::ScrollPreview(delta) => {
-                self.state.preview.top = self
-                    .state
-                    .preview
-                    .top
-                    .saturating_add_signed(delta)
-                    .min(self.state.preview.total_lines.saturating_sub(1));
+                self.preview_follows_selection = false;
+                let top = self.state.preview.top.saturating_add_signed(delta);
+                // Before the first preview arrives, its length is unknown.
+                // The worker will clamp the requested position after reading.
+                self.state.preview.top = if self.state.preview.total_lines == 0 {
+                    top
+                } else {
+                    top.min(self.state.preview.total_lines - 1)
+                };
                 self.request_preview();
+            }
+            Command::SetPreviewRows(rows) => {
+                let rows = rows.clamp(1, 200);
+                if rows != self.preview_rows {
+                    self.preview_rows = rows;
+                    if self.preview_follows_selection {
+                        let top = self.centered_preview_top();
+                        if top != self.state.preview.top {
+                            self.state.preview.top = top;
+                            self.request_preview();
+                        }
+                    }
+                }
             }
         }
     }
@@ -546,7 +575,7 @@ impl SearchSession {
                 let target = self
                     .restore
                     .as_ref()
-                    .map(|(path, line, _)| (path.clone(), *line))
+                    .map(|target| (target.path.clone(), target.line))
                     .or(selected.clone());
                 self.state.selected_index = target
                     .and_then(|(path, line)| {
@@ -570,31 +599,28 @@ impl SearchSession {
                         .selected()
                         .map(|row| (row.path.clone(), row.line))
                 {
-                    self.state.preview.top = self
+                    let restored = self
                         .restore
                         .as_ref()
-                        .filter(|(path, line, _)| {
-                            self.state
-                                .selected()
-                                .is_some_and(|row| &row.path == path && row.line == *line)
+                        .filter(|target| {
+                            self.state.selected().is_some_and(|row| {
+                                row.path == target.path && row.line == target.line
+                            })
                         })
-                        .map_or_else(
-                            || {
-                                self.state
-                                    .selected()
-                                    .map_or(0, |row| row.line.saturating_sub(11))
-                            },
-                            |(_, _, top)| *top,
-                        );
+                        .map(|target| (target.top, target.following_selection));
+                    let (top, following) =
+                        restored.unwrap_or_else(|| (self.centered_preview_top(), true));
+                    self.state.preview.top = top;
+                    self.preview_follows_selection = following;
                     self.request_preview();
                 }
                 if done
-                    && let Some((path, line, _)) = self.restore.take()
+                    && let Some(target) = self.restore.take()
                     && !self
                         .state
                         .results
                         .iter()
-                        .any(|row| row.path == path && row.line == line)
+                        .any(|row| row.path == target.path && row.line == target.line)
                 {
                     self.state.message =
                         "Previous selection unavailable; selected a remaining result".into();
@@ -617,7 +643,25 @@ impl SearchSession {
                 }
             }
             SearchEvent::Preview { id, preview } if id == self.preview_id => {
-                self.state.preview = preview
+                self.state.preview = preview;
+                // A byte-limited window may contain fewer source lines than
+                // the viewport. Keep a new match visible even in that case.
+                if self.preview_follows_selection
+                    && self.state.mode == SearchMode::Contents
+                    && let Some(row) = self.state.selected()
+                    && row.line <= self.state.preview.total_lines
+                    && !self.state.preview.lines.is_empty()
+                    && !self
+                        .state
+                        .preview
+                        .lines
+                        .iter()
+                        .take(self.preview_rows)
+                        .any(|line| line.number == row.line)
+                {
+                    self.state.preview.top = row.line.saturating_sub(1);
+                    self.request_preview();
+                }
             }
             _ => {}
         }
@@ -640,10 +684,12 @@ impl SearchSession {
             exclude: self.state.exclude.clone(),
             hidden: self.state.hidden,
             ignored: self.state.ignored,
-            target: self
-                .state
-                .selected()
-                .map(|row| (row.path.clone(), row.line, self.state.preview.top)),
+            target: self.state.selected().map(|row| SelectionTarget {
+                path: row.path.clone(),
+                line: row.line,
+                top: self.state.preview.top,
+                following_selection: self.preview_follows_selection,
+            }),
         });
         self.state.scope = scope;
         self.state.preset = preset;
@@ -663,16 +709,15 @@ impl SearchSession {
         let index = index.min(self.state.results.len().saturating_sub(1));
         if index != self.state.selected_index {
             self.state.selected_index = index;
-            self.state.preview.top = self
-                .state
-                .selected()
-                .map_or(0, |row| row.line.saturating_sub(11));
+            self.preview_follows_selection = true;
+            self.state.preview.top = self.centered_preview_top();
             self.request_preview();
         }
     }
     fn refresh(&mut self) {
         self.action = None;
         self.restore = None;
+        self.preview_follows_selection = true;
         self.state.generation += 1;
         self.state.scanning = true;
         self.state.results.clear();
@@ -704,6 +749,13 @@ impl SearchSession {
                 limits: self.limits,
             },
         );
+    }
+    fn centered_preview_top(&self) -> usize {
+        self.state.selected().map_or(0, |row| {
+            row.line
+                .saturating_sub(1)
+                .saturating_sub(self.preview_rows / 2)
+        })
     }
     fn request_preview(&mut self) {
         self.preview_id += 1;

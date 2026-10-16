@@ -79,7 +79,14 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
 
         def wait_for(text, absent=False):
             deadline = time.monotonic() + 8
-            while (text in screen.text()) == absent:
+            visible_since = None
+            while True:
+                if (text in screen.text()) != absent:
+                    visible_since = visible_since or time.monotonic()
+                    if time.monotonic() - visible_since >= 0.1:
+                        return
+                else:
+                    visible_since = None
                 if time.monotonic() > deadline:
                     raise AssertionError(f"{mode}: expected {text!r}, absent={absent}:\n{screen.text()}")
                 readable, _, _ = select.select([master], [], [], 0.1)
@@ -106,15 +113,15 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
                 send(b"needle", "needle 251")
                 wait_for("needle 260")
                 if columns < 100:
-                    send(b"\x1b[21~", "Lines 241")  # F10 preview
+                    send(b"\x1b[21~", "needle 251")  # F10 preview
                 # Matching rows are grouped beneath the file, then selected by line.
-                send(b"\x1b[B", "Lines 250")
-                send(b"\x1b[6~", "Lines 260")
+                send(b"\x1b[B", "needle 260")
+                send(b"\x1b[6~", "context 270")
                 send(b"\t\\.rs$", "Include \\.rs$")
                 # Effective settings select the first row; select the second again.
-                wait_for("Lines 241")
-                send(b"\x1b[B", "Lines 250")
-                send(b"\x1b[6~", "Lines 260")
+                wait_for("needle 251")
+                send(b"\x1b[B", "needle 260")
+                send(b"\x1b[6~", "context 270")
             os.write(master, b"\r")
             if mode in ("success", "exit", "interrupt", "files", "generic", "raw"):
                 wait_for("isolated editor owns terminal")
@@ -141,7 +148,7 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
             if mode not in ("files", "generic"):
                 wait_for("Query needle")
                 wait_for("Include \\.rs$")
-                wait_for("Lines 260")
+                wait_for("context 270")
             assert not termios.tcgetattr(master)[3] & termios.ICANON, "Picker did not reacquire raw mode"
             os.write(master, b"\x03")
             deadline = time.monotonic() + 5

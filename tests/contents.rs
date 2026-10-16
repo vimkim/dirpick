@@ -348,6 +348,73 @@ fn back_restores_content_mode_regex_exact_line_and_preview_position() {
 }
 
 #[test]
+fn preview_centers_a_selected_match_for_its_viewport_and_preserves_manual_scroll_history() {
+    let root = tempdir().unwrap();
+    fs::create_dir(root.path().join("other")).unwrap();
+    let source = (1..=300)
+        .map(|number| {
+            if matches!(number, 260 | 280) {
+                format!("needle {number}\n")
+            } else {
+                format!("context {number}\n")
+            }
+        })
+        .collect::<String>();
+    fs::write(root.path().join("source.rs"), source).unwrap();
+    let mut session = SearchSession::open(root.path()).unwrap();
+    session.command(Command::SetMode(SearchMode::Contents));
+    session.command(Command::SetQuery("needle".into()));
+    session.command(Command::SetPreviewRows(5));
+    settled(&mut session);
+    assert_eq!(session.state().preview.lines[2].text, "needle 260");
+    let generation = session.state().generation;
+    session.command(Command::SetPreviewRows(11));
+    settled(&mut session);
+    assert_eq!(session.state().preview.lines[5].text, "needle 260");
+    assert_eq!(session.state().generation, generation);
+    session.command(Command::ScrollPreview(-10));
+    settled(&mut session);
+    let manually_scrolled_top = session.state().preview.top;
+    session.command(Command::SetPreviewRows(3));
+    settled(&mut session);
+    assert_eq!(session.state().preview.top, manually_scrolled_top);
+    session.command(Command::ApplyScope("other".into()));
+    settled(&mut session);
+    session.command(Command::Back);
+    settled(&mut session);
+    session.command(Command::SetPreviewRows(9));
+    settled(&mut session);
+    assert_eq!(session.state().selected().unwrap().line, 260);
+    assert_eq!(session.state().preview.top, manually_scrolled_top);
+    session.command(Command::MoveSelection(1));
+    settled(&mut session);
+    assert_eq!(session.state().preview.lines[4].text, "needle 280");
+    // The 64 KiB window can contain fewer lines than a tall viewport. The
+    // selected source location must still appear in that bounded window.
+    let long_line = format!("{}\n", "x".repeat(5000));
+    fs::write(
+        root.path().join("source.rs"),
+        format!(
+            "{}needle only260\n{}",
+            long_line.repeat(259),
+            long_line.repeat(40)
+        ),
+    )
+    .unwrap();
+    session.command(Command::SetPreviewRows(100));
+    session.command(Command::SetQuery("only260".into()));
+    settled(&mut session);
+    assert!(
+        session
+            .state()
+            .preview
+            .lines
+            .iter()
+            .any(|line| line.text == "needle only260")
+    );
+}
+
+#[test]
 fn zero_width_regex_spans_and_content_read_errors_remain_observable() {
     use std::os::unix::fs::PermissionsExt;
     let root = tempdir().unwrap();

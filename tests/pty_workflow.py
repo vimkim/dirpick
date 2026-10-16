@@ -26,6 +26,21 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     finally:
         picker.close()
 
+    viewport_root = os.path.join(root, "viewport-fixture")
+    os.mkdir(viewport_root)
+    with open(os.path.join(viewport_root, "context.rs"), "w") as source:
+        for number in range(1, 301):
+            source.write("selected needle 260\n" if number == 260 else f"context {number}\n")
+    picker = Picker(binary, viewport_root, 70, 18)
+    try:
+        picker.wait("context.rs")
+        picker.send(b"\x1bORneedle", "Results · 1")
+        picker.send(b"\x1b[21~", "selected needle 260")
+        picker.send(b"\x03")
+        assert picker.finish() == b""
+    finally:
+        picker.close()
+
     memory_root = os.path.join(root, "memory-fixture")
     os.mkdir(memory_root)
     with open(os.path.join(memory_root, "minified.txt"), "w") as source:
@@ -131,6 +146,10 @@ input()
             picker.send("界", "Query 한界")
             picker.send("\x15é🙂", "Query é🙂")
             assert picker.screen.x == 12, (picker.screen.x, picker.screen.text())
+            if columns < 100:
+                # End must expose its neighboring text after a joined emoji,
+                # even when the field scrolls beyond the composed glyph.
+                picker.send("\x15" + "a" * 20 + "👨‍👩‍👧‍👦ABCDEFGHIJKLMNOPQRSTUVWXYZ1234", "XYZ1234")
             picker.send(b"\x15needle", "Query needle")
             picker.send(b"\x19", "payload sent")
             payloads = re.findall(rb"\x1b\]52;c;([^\x07]*)\x07", picker.output)
@@ -143,37 +162,38 @@ input()
             picker.wait("Results · 2")
             picker.send(b"\x1bOS", "Regex:on")  # F4
             if columns < 100:
-                picker.send(b"\x1b[21~", "Lines 241")
+                picker.send(b"\x1b[21~", "needle 251")
                 preview_pane = True
             else:
-                picker.wait("Lines 241")
-            picker.send(b"\x1b[B", "Lines 250")
-            picker.send(b"\x1b[A", "Lines 241")
-            picker.send(b"\x1b[B", "Lines 250")
-            picker.send(b"\x1b[6~", "Lines 260")
+                picker.wait("needle 251")
+            picker.send(b"\x1b[B", "needle 260")
+            picker.send(b"\x1b[A", "needle 251")
+            picker.send(b"\x1b[B", "needle 260")
+            picker.send(b"\x1b[6~", "context 270")
+            scroll_first = min(map(int, re.findall(r"context (\d+)", picker.screen.text())))
             for width, height in [(70, 18), (120, 32), (80, 24), (columns, rows)]:
                 picker.resize(width, height)
                 picker.wait("Query needle")
                 picker.wait("Include \\.rs$")
                 picker.wait("Ignored:off")
                 if width < 100 and not preview_pane:
-                    picker.send(b"\x1b[21~", "Lines 260")
+                    picker.send(b"\x1b[21~", f"context {scroll_first}")
                     preview_pane = True
-                picker.wait("Lines 260")
+                picker.wait(f"context {scroll_first}")
             picker.send(b"\r", "journey editor owns terminal")
             with open(record) as saved:
                 observed = json.load(saved)
             assert observed == {"args": ["+260", "--", selected], "tty": [True] * 3, "canonical": True, "echo": True}, observed
             picker.send(b"return\n", "Editor closed")
             picker.wait("Query needle")
-            picker.wait("Lines 260")
+            picker.wait(f"context {scroll_first}")
             # Invalid manual scopes retain the current result and field focus.
             picker.send(b"\x0c\x15missing-directory\r", "Cannot apply scope")
             picker.wait("> Scope missing-directory")
             picker.send(b"\x15.\r", "> Query")
             picker.wait("Query needle", absent=True)
             picker.send(b"\x1b[1;3D", "Query needle")
-            picker.wait("Lines 260")
+            picker.wait(f"context {scroll_first}")
             picker.send(b"\x06", "> Query")
             picker.send(b"\x1b[19~\x1b[20~", "Hidden:on F9 Ignored:on")
             picker.send(b"\x1bOQ", "Workbench │ Directories")

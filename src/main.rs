@@ -52,6 +52,7 @@ fn run() -> io::Result<()> {
     let mut ui = Workbench::new(&session);
     let mut terminal = TerminalSession::open()?;
     loop {
+        ui.resize(&mut session, terminal.terminal().size()?.height);
         session.poll();
         while let Some(action) = session.take_action() {
             if matches!(action, Action::ChangeDirectory { .. }) {

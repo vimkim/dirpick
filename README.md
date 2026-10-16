@@ -81,7 +81,10 @@ active search and show an error. CWD always means the original launch directory.
 Scope changes retain Include, Exclude, Hidden, and Ignored settings.
 At 100 columns or more, Results and Preview appear beside each other. At 70–99
 columns, F10 switches between them. Settings remain visible in both layouts.
-Resizing keeps the active search, selected result, and preview position.
+Resizing keeps the active search, selected result, and manual preview position.
+A new content selection centers its matching line within the available preview
+rows. Its context adjusts on resize until PageUp/PageDown begins independent
+scrolling. Back restores the previous preview position and scrolling behavior.
 The interface supports terminals of at least 70 columns and 18 rows. Below
 that size, F12 opens basic help and Esc or Ctrl-C still exits.
 Set `NO_COLOR` to use terminal default colors with selection markers and attributes.
@@ -120,6 +123,8 @@ syntax definitions provide Mocha colors without runtime downloads, with plain
 text for unknown syntax. Multiline parsing retains preceding source context.
 Lines over 4 KiB disable syntax parsing from that line onward. Oversized window
 lines show a clipped prefix with a limit notice. PageDown can inspect later lines.
+If the byte limit leaves insufficient context around a new content selection,
+the preview begins at its matching line.
 
 Ctrl-Y writes the selected absolute UTF-8 path to the controlling terminal as an
 OSC 52 clipboard payload. The feedback says **payload sent**, because terminal
