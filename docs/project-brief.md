@@ -50,9 +50,11 @@ line. Build complete workflows one at a time within that release.
 
 Mode, scope, query, include, and exclude controls stay visible above side-by-side
 results and preview. Tab moves between fields. Current settings remain visible.
+Use Workbench (B) as the preferred layout: group content matches by file,
+with the search controls on the left and scope and path filters on the right.
 Narrow-terminal behavior and the remaining keybindings are still open.
-The user found the browser mockups did not look like a TUI. Evaluate the layout
-in the running terminal prototype when choosing the design.
+The user accepted the native terminal design; the earlier browser mockups did
+not look sufficiently like a TUI.
 
 ### Appearance
 
@@ -109,7 +111,7 @@ and action contracts. The browser study remains at commit `ed6eb3a` as
 historical evidence; the user rejected its appearance as insufficiently TUI-like.
 
 The current study is a native Rust TUI on local branch `prototype/search-layouts`,
-commit `54be0b4`, with entry point `prototypes/terminal/Cargo.toml`.
+commit `e49d91b`, with entry point `prototypes/terminal/Cargo.toml`.
 Its checkout is `/home/vimkim/gh/dirpick-prototype`. Run instructions and keys
 are in `prototypes/README.md` on that branch. Ratatui and Crossterm are prototype
 tools; the production framework choice remains open.
@@ -120,7 +122,8 @@ F5 switches layouts while preserving the search; F6 loads sample workflows.
 F7 switches Project / launch CWD while keeping the search settings.
 All data are synthetic. Editor, clipboard, and shell actions remain simulated.
 The prototype uses fixed sample roots; real Git-root discovery remains to build.
-No winning layout has been selected.
+Workbench (B) is the preferred design and the prototype's startup layout.
+A and C remain available for comparison.
 
 Actual PTY checks verified keyboard fields, regex error recovery, matching,
 selection, editor-overlay return, directory scope history, Project/CWD switching
@@ -164,8 +167,16 @@ is a desired Dirpick capability.
 ## Environment
 
 Development runs on remote Linux over SSH. Use terminal tools and headless checks.
-The detected login shell is Nu; supported everyday shells and the local terminal
-client still need confirmation.
+The detected login shell is Nu, and `EDITOR` is `nvim`. The existing Nushell
+clipboard helper and Neovim clipboard configuration both use OSC 52 over SSH.
+Nushell wrappers already use JSON picker output or a cwd file followed by an
+ordinary shell `cd`. These are observed environment conventions; supported
+shells and clipboard formats for Dirpick remain design choices.
+
+Evidence: `~/.config/nushell/clip.nu`, `~/.config/nvim/lua/config/options.lua`,
+and `~/.config/nushell/alias.nu`. The current session reports `TERM_PROGRAM=herdr`;
+this does not establish the SSH client's clipboard capabilities. Successful
+OSC 52 delivery to that client has not been verified.
 
 A child process cannot change its parent shell's working directory. The directory
 selection action needs a shell hook and a reliable path-return protocol. Paths
