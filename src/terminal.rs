@@ -8,20 +8,30 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     fs::{File, OpenOptions},
     io::{self, Write},
+    os::fd::AsRawFd,
 };
 
 pub type NativeTerminal = Terminal<CrosstermBackend<File>>;
 pub struct TerminalSession {
     terminal: NativeTerminal,
     cleanup: File,
+    original_modes: libc::termios,
 }
 impl TerminalSession {
     pub fn open() -> io::Result<Self> {
         let writer = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
         let cleanup = writer.try_clone()?;
+        let mut original_modes = std::mem::MaybeUninit::uninit();
+        // SAFETY: tcgetattr initializes the termios value on success. The
+        // descriptor is owned by the controlling-terminal File above.
+        if unsafe { libc::tcgetattr(cleanup.as_raw_fd(), original_modes.as_mut_ptr()) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let original_modes = unsafe { original_modes.assume_init() };
         let mut session = Self {
             terminal: Terminal::new(CrosstermBackend::new(writer))?,
             cleanup,
+            original_modes,
         };
         enable_raw_mode()?;
         execute!(session.cleanup, EnterAlternateScreen, Hide)?;
@@ -46,10 +56,14 @@ impl TerminalSession {
                     self.cleanup.flush()?;
                     execute!(self.cleanup, LeaveAlternateScreen, Show)?;
                     disable_raw_mode()?;
+                    self.restore_modes()?;
                     command.run(&self.cleanup)
                 })();
                 // Restore on both failed spawn and successful/failed child return.
                 let restored = (|| {
+                    // A failed editor may leave the tty raw. Restore our launch
+                    // snapshot before Crossterm captures its next original mode.
+                    self.restore_modes()?;
                     enable_raw_mode()?;
                     execute!(self.cleanup, EnterAlternateScreen, Hide)?;
                     self.redraw()
@@ -69,10 +83,27 @@ impl TerminalSession {
         let area = self.terminal.size()?.into();
         self.terminal.resize(area)
     }
+    fn restore_modes(&self) -> io::Result<()> {
+        // SAFETY: the descriptor remains open and original_modes came from a
+        // successful tcgetattr on this controlling terminal.
+        if unsafe {
+            libc::tcsetattr(
+                self.cleanup.as_raw_fd(),
+                libc::TCSANOW,
+                &self.original_modes,
+            )
+        } == 0
+        {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
 }
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
+        let _ = self.restore_modes();
         let _ = execute!(self.cleanup, LeaveAlternateScreen, Show);
         let _ = self.cleanup.flush();
     }

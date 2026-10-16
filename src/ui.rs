@@ -151,6 +151,8 @@ pub struct Workbench {
     exclude: Field,
     scope: Field,
     help: bool,
+    help_scroll: usize,
+    help_max_scroll: usize,
     preview_pane: bool,
     theme: Theme,
     observed_scope: std::path::PathBuf,
@@ -165,6 +167,8 @@ impl Workbench {
             exclude: Field::default(),
             scope: Field::default(),
             help: false,
+            help_scroll: 0,
+            help_max_scroll: 0,
             preview_pane: false,
             theme: Theme::new(),
             observed_scope: session.state().scope.clone(),
@@ -211,8 +215,17 @@ impl Workbench {
             return true;
         }
         if self.help {
-            if matches!(key.code, KeyCode::Esc | KeyCode::F(12)) {
-                self.help = false;
+            match key.code {
+                KeyCode::Esc | KeyCode::F(12) => self.help = false,
+                KeyCode::PageDown | KeyCode::Down => {
+                    self.help_scroll = (self.help_scroll + 10).min(self.help_max_scroll)
+                }
+                KeyCode::PageUp | KeyCode::Up => {
+                    self.help_scroll = self.help_scroll.saturating_sub(10)
+                }
+                KeyCode::Home => self.help_scroll = 0,
+                KeyCode::End => self.help_scroll = self.help_max_scroll,
+                _ => {}
             }
             return false;
         }
@@ -220,7 +233,10 @@ impl Workbench {
             KeyCode::Esc => return true,
             KeyCode::F(1) => session.command(Command::SetMode(SearchMode::Files)),
             KeyCode::F(2) => session.command(Command::SetMode(SearchMode::Directories)),
-            KeyCode::F(12) => self.help = true,
+            KeyCode::F(12) => {
+                self.help = true;
+                self.help_scroll = 0;
+            }
             KeyCode::F(3) => session.command(Command::SetMode(SearchMode::Contents)),
             KeyCode::F(4) => session.command(Command::ToggleRegex),
             KeyCode::F(10) => self.preview_pane = !self.preview_pane,
@@ -297,14 +313,19 @@ impl Workbench {
         }
         false
     }
-    pub fn draw(&self, frame: &mut Frame, session: &SearchSession) {
+    pub fn draw(&mut self, frame: &mut Frame, session: &SearchSession) {
         let area = frame.area();
         let state = session.state();
         frame.render_widget(Block::default().style(self.theme.base), area);
         if area.width < 70 || area.height < 18 {
             frame.render_widget(
-                Paragraph::new("dirpick · Resize terminal to at least 70×18\nEsc / Ctrl-C quit")
-                    .style(self.theme.accent),
+                Paragraph::new(if self.help {
+                    "Keyboard help · Ctrl-C quit\nF12 / Esc close help\nResize terminal to at least 70×18 for the workbench\nF1/F2/F3 Files/Directories/Contents · F4 Regex\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nCtrl-U clear · arrows/Home/End edit · Up/Down select\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview\nF7 Project/CWD · F8 Hidden · F9 Ignored · F10 pane"
+                } else {
+                    "dirpick · Resize terminal to at least 70×18\nF12 Help · Esc / Ctrl-C quit"
+                })
+                .wrap(Wrap { trim: false })
+                .style(self.theme.accent),
                 area,
             );
             return;
@@ -343,7 +364,8 @@ impl Workbench {
                             "F3 Contents · F4 Regex:on · smart case"
                         }
                         SearchMode::Contents => "F3 Contents · F4 Regex:off · smart case",
-                        _ => "F1 Files · F2 Directories · fuzzy · smart case",
+                        _ if state.regex => "F4 Regex:on (Contents) · fuzzy",
+                        _ => "F4 Regex:off (Contents) · fuzzy",
                     },
                     self.theme.accent,
                 )),
@@ -440,12 +462,12 @@ impl Workbench {
         let invalid_filters = state.query_error.is_some()
             || state.include_error.is_some()
             || state.exclude_error.is_some();
-        let mut status = if let Some(error) = &state.query_error {
-            format!("Invalid content regex: {error}")
-        } else if let Some(error) = &state.include_error {
-            format!("Invalid include regex: {error}")
-        } else if let Some(error) = &state.exclude_error {
-            format!("Invalid exclude regex: {error}")
+        let status = if state.query_error.is_some() {
+            "Invalid content regex · F12 details".into()
+        } else if state.include_error.is_some() {
+            "Invalid include regex · F12 details".into()
+        } else if state.exclude_error.is_some() {
+            "Invalid exclude regex · F12 details".into()
         } else if state.scope_loading {
             "Validating scope… current search retained".into()
         } else if state.scanning {
@@ -456,7 +478,17 @@ impl Workbench {
             )
         } else {
             format!(
-                "{} {} · {} visited · {} errors · {} skipped{}{}",
+                "{}{}{} {} · {} visited · {} errors · {} skipped",
+                if state.entry_limit {
+                    "PARTIAL: entry limit · "
+                } else {
+                    ""
+                },
+                if state.result_limit {
+                    "PARTIAL: result limit · "
+                } else {
+                    ""
+                },
                 state.results.len(),
                 match state.mode {
                     SearchMode::Files => "files",
@@ -466,53 +498,57 @@ impl Workbench {
                 state.visited,
                 state.errors,
                 state.skipped,
-                if state.entry_limit {
-                    " · PARTIAL: entry limit"
-                } else {
-                    ""
-                },
-                if state.result_limit {
-                    " · PARTIAL: result limit"
-                } else {
-                    ""
-                }
             )
         };
-        if let Some(error) = &state.scan_error {
-            status.push_str(" · ");
-            status.push_str(&display_text(error));
+        let detail = if !state.message.is_empty() {
+            state.message.as_str()
+        } else if let Some(error) = state
+            .query_error
+            .as_ref()
+            .or(state.include_error.as_ref())
+            .or(state.exclude_error.as_ref())
+            .or(state.scan_error.as_ref())
+        {
+            error
+        } else {
+            "Ctrl-Y Copy · Ctrl-G cd & exit · Alt-Left Back · PgUp/Dn Preview"
+        };
+        let mut detail = display_text(detail);
+        if detail.width() > usize::from(vertical[3].width) {
+            let suffix = "… F12 details";
+            let available = usize::from(vertical[3].width).saturating_sub(suffix.width());
+            let mut cells = 0;
+            detail = detail
+                .chars()
+                .take_while(|character| {
+                    cells += character.width().unwrap_or(0);
+                    cells <= available
+                })
+                .collect::<String>();
+            detail.push_str(suffix);
         }
-        let mut lines = vec![
+        // Reserve one row each for completion/limits, action feedback, and help.
+        // Long errors remain inspectable in help without displacing these rows.
+        let lines = vec![
             Line::from(Span::styled(
-                status,
+                status.clone(),
                 if invalid_filters || state.errors > 0 || state.entry_limit || state.result_limit {
                     self.theme.error
                 } else {
                     self.theme.accent
                 },
             )),
+            Line::raw(detail),
             Line::raw(format!(
-                "↑↓ Select  Enter {}  PgUp/Dn Preview  F7 Scope  F10 Pane  F12 Help",
+                "↑↓ Select  Enter {}  Tab Fields  F10 Pane  F12 Help  Esc Quit",
                 if state.mode == SearchMode::Directories {
                     "Browse"
                 } else {
                     "Editor"
                 }
             )),
-            Line::raw("Ctrl-Y Copy  Ctrl-G cd & exit  Tab Fields  Alt-Left Back  Esc Quit"),
         ];
-        if !state.message.is_empty() {
-            lines.insert(
-                0,
-                Line::styled(display_text(&state.message), self.theme.accent),
-            );
-        }
-        frame.render_widget(
-            Paragraph::new(lines)
-                .wrap(Wrap { trim: false })
-                .style(self.theme.dim),
-            vertical[3],
-        );
+        frame.render_widget(Paragraph::new(lines).style(self.theme.dim), vertical[3]);
         if self.help {
             let popup = Rect::new(
                 area.x + 4,
@@ -521,7 +557,55 @@ impl Workbench {
                 (area.height - 3).min(15),
             );
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nCtrl-Y: send exact absolute path through OSC 52\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF1/F2/F3: Files/Directories/Contents; F4: Regex\nEnter: browse or open editor; Ctrl-G: cd & exit\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
+            let mut feedback = vec![status];
+            for message in [
+                Some(&state.message),
+                state.query_error.as_ref(),
+                state.include_error.as_ref(),
+                state.exclude_error.as_ref(),
+                state.scan_error.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if !message.is_empty() {
+                    feedback.push(display_text(message));
+                }
+            }
+            let help = format!(
+                "F12 / Esc close help · Ctrl-C quit · PgUp/Dn scroll\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear; Left/Right/Home/End: edit\nUp/Down select · PageUp/PageDown preview\nCtrl-Y: exact absolute path via OSC 52\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nF10: Results/Preview below 100 columns\nF1/F2/F3: Files/Directories/Contents · F4 Regex\nEnter browse/editor · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
+                feedback.join("\n")
+            );
+            let mut lines = Vec::new();
+            let width = usize::from(popup.width.saturating_sub(2));
+            for line in help.lines() {
+                let (mut text, mut cells) = (String::new(), 0);
+                for character in line.chars() {
+                    let next = character.width().unwrap_or(0);
+                    if cells + next > width {
+                        lines.push(Line::raw(std::mem::take(&mut text)));
+                        cells = 0;
+                    }
+                    text.push(character);
+                    cells += next;
+                }
+                lines.push(Line::raw(text));
+            }
+            self.help_max_scroll = lines
+                .len()
+                .saturating_sub(usize::from(popup.height.saturating_sub(2)));
+            self.help_scroll = self.help_scroll.min(self.help_max_scroll);
+            let help = Paragraph::new(lines);
+            frame.render_widget(
+                help.scroll((self.help_scroll as u16, 0))
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Keyboard help · PgUp/Dn details "),
+                    )
+                    .style(self.theme.base),
+                popup,
+            );
         }
     }
     fn field(

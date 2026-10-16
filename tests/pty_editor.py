@@ -31,19 +31,23 @@ with tempfile.TemporaryDirectory(prefix="dirpick-editor-") as temporary:
     record = os.path.join(temporary, "editor.json")
     with open(editor, "w") as program:
         program.write("""#!/usr/bin/env python3
-import json, os, sys, termios
+import json, os, sys, termios, tty
 flags = termios.tcgetattr(0)
 with open(os.environ['EDITOR_RECORD'], 'w') as record:
     json.dump({'argv': sys.argv[1:], 'tty': [os.isatty(fd) for fd in (0, 1, 2)], 'canonical': bool(flags[3] & termios.ICANON), 'echo': bool(flags[3] & termios.ECHO)}, record)
 print('isolated editor owns terminal', flush=True)
 print('editor stderr stays on tty', file=sys.stderr, flush=True)
 input()
-sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
+if os.environ['EDITOR_TEST_MODE'] == 'raw':
+    tty.setraw(0)
+sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
 """)
     os.chmod(editor, 0o700)
     shutil.copyfile(editor, generic_editor)
     os.chmod(generic_editor, 0o700)
-    for mode in ("success", "exit", "interrupt", "missing", "unsupported", "files", "generic"):
+    scenarios = [(120, 32, mode) for mode in ("success", "exit", "interrupt", "missing", "unsupported", "files", "generic")]
+    scenarios += [(80, 24, "success"), (70, 18, "missing"), (70, 18, "unsupported"), (70, 18, "interrupt"), (70, 18, "raw")]
+    for columns, rows, mode in scenarios:
         if os.path.exists(record):
             os.unlink(record)
         stdout_read, stdout_write = os.pipe()
@@ -67,10 +71,10 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
         os.close(stdout_write)
         os.close(ready_read)
         before = termios.tcgetattr(master)
-        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 120, 0, 0))
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
         os.write(ready_write, b"1")
         os.close(ready_write)
-        screen = Screen(32, 120)
+        screen = Screen(rows, columns)
         output = bytearray()
 
         def wait_for(text, absent=False):
@@ -101,6 +105,8 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
                 send(b"\x1bOR", "Type a content query")
                 send(b"needle", "needle 251")
                 wait_for("needle 260")
+                if columns < 100:
+                    send(b"\x1b[21~", "Lines 241")  # F10 preview
                 # Matching rows are grouped beneath the file, then selected by line.
                 send(b"\x1b[B", "Lines 250")
                 send(b"\x1b[6~", "Lines 260")
@@ -110,7 +116,7 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
                 send(b"\x1b[B", "Lines 250")
                 send(b"\x1b[6~", "Lines 260")
             os.write(master, b"\r")
-            if mode in ("success", "exit", "interrupt", "files", "generic"):
+            if mode in ("success", "exit", "interrupt", "files", "generic", "raw"):
                 wait_for("isolated editor owns terminal")
                 with open(record) as saved:
                     observed = json.load(saved)
@@ -120,14 +126,18 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] == 'exit' else 0)
                 assert observed["tty"] == [True, True, True], observed
                 assert observed["canonical"] and observed["echo"], observed
                 assert b"\x1b[?1049l" in output, "Editor did not leave alternate screen"
-                send(b"\x03" if mode == "interrupt" else b"return\n", "Editor failed" if mode in ("exit", "interrupt") else "Editor closed")
+                send(b"\x03" if mode == "interrupt" else b"return\n", "Editor failed" if mode in ("exit", "interrupt", "raw") else "Editor closed")
             elif mode == "missing":
                 wait_for("Editor failed")
                 assert not os.path.exists(record)
             else:
                 wait_for("Content locations require Vim/Neovim")
                 assert not os.path.exists(record)
-            wait_for("search retained")
+            # Full action errors remain available even when their footer row clips.
+            send(b"\x1b[24~", "Keyboard help")
+            send(b"\x1b[F", "retained")
+            os.write(master, b"\x1b")
+            wait_for("Keyboard help", absent=True)
             if mode not in ("files", "generic"):
                 wait_for("Query needle")
                 wait_for("Include \\.rs$")

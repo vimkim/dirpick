@@ -29,7 +29,9 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
         module.write(wrapper)
     with open(os.path.join(root, "check.nu"), "w") as script:
         script.write("use ./dirpick.nu dp\ndp\n$env.PWD | to json --raw\n")
-    for integration, cancel, via_nu in [(False, True, False), (True, True, False), (True, False, False), (True, False, True)]:
+    scenarios = [(False, True, False, 120, 32), (True, True, False, 80, 24), (True, False, False, 70, 18)]
+    scenarios += [(True, False, True, columns, rows) for columns, rows in [(120, 32), (80, 24), (70, 18)]]
+    for integration, cancel, via_nu, columns, rows in scenarios:
         ready_read, ready_write = os.pipe()
         stdout_read, stdout_write = os.pipe()
         pid, master = pty.fork()
@@ -51,10 +53,10 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
         os.close(ready_read)
         os.close(stdout_write)
         before = termios.tcgetattr(master)
-        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 120, 0, 0))
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
         os.write(ready_write, b"1")
         os.close(ready_write)
-        screen = Screen(32, 120)
+        screen = Screen(rows, columns)
         output = bytearray()
 
         def wait_for(text, absent=False):
@@ -80,6 +82,8 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
         try:
             wait_for("Workbench")
             send(b"\x1bOQ", "Workbench │ Directories")  # F2
+            if columns < 100:
+                send(b"\x1b[21~", "visible-child.txt")  # F10 preview
             wait_for("nested-child/")
             wait_for("visible-child.txt")
             send(b"destination", "Query destination")
