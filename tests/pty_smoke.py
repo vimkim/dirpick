@@ -1,5 +1,6 @@
 """Semantic native-terminal checks, without a GUI or third-party Python packages."""
 import codecs
+import base64
 import errno
 import fcntl
 import os
@@ -27,6 +28,12 @@ class Screen:
     def feed(self, chunk):
         self.pending += self.decoder.decode(chunk)
         while self.pending:
+            if self.pending.startswith("\x1b]"):
+                end = self.pending.find("\x07")
+                if end < 0:
+                    return
+                self.pending = self.pending[end + 1:]
+                continue
             if self.pending.startswith("\x1b["):
                 command = re.match(r"\x1b\[([0-9;?]*)([ -/]*)([@-~])", self.pending)
                 if not command:
@@ -65,12 +72,19 @@ class Screen:
 
 binary = sys.argv[1]
 with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
-    with open(os.path.join(root, "needle.rs"), "w") as source:
-        source.write("real source preview\nsecond line\n")
+    filename = "needle '한글'\t \n.rs"
+    selected_path = os.path.join(root, filename)
+    with open(selected_path, "w") as source:
+        source.write("fn main() {} // real source preview\nsecond line\n")
+        source.writelines(f"// preview line {line}\n" for line in range(3, 41))
     for columns, rows in [(120, 32), (80, 24), (70, 18)]:
         start_read, start_write = os.pipe()
+        stdout_read, stdout_write = os.pipe()
         pid, master = pty.fork()
         if pid == 0:
+            os.close(stdout_read)
+            os.dup2(stdout_write, 1)
+            os.close(stdout_write)
             os.close(start_write)
             os.read(start_read, 1)
             os.close(start_read)
@@ -78,8 +92,11 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
             os.environ["TERM"] = "xterm-256color"
             if columns == 80:
                 os.environ["NO_COLOR"] = "1"
+            else:
+                os.environ.pop("NO_COLOR", None)
             os.execv(binary, [binary])
         os.close(start_read)
+        os.close(stdout_write)
         before = termios.tcgetattr(master)
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
         os.write(start_write, b"1")
@@ -106,14 +123,22 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
                         raise
 
         try:
-            wait_for(b"needle.rs")
+            wait_for(b"needle")
             wait_for(b"real source preview") if columns >= 100 else None
             assert b"\x1b[?1049h" in output
+            if columns >= 100:
+                assert re.search(rb"38;2;203;166;247", output), "Rust syntax keyword was not colored"
             os.write(master, b"no-such-file")
             wait_for(b"No matching files")
             os.write(master, b"\x15needle")
             wait_for(b"Query needle")
-            wait_for(b"needle.rs")
+            wait_for("Results · 1".encode())
+            os.write(master, b"\x19")  # Ctrl-Y, isolated PTY clipboard only
+            wait_for(b"payload sent")
+            clipboards = re.findall(rb"\x1b\]52;c;([^\x07]*)\x07", output)
+            assert clipboards, "No clipboard payload reached the controlling terminal"
+            assert base64.b64decode(clipboards[-1]) == os.fsencode(selected_path)
+            wait_for(b"Query needle")
             os.write(master, b"\x1b[24~")  # F12 help
             wait_for(b"Keyboard help")
             os.write(master, b"\x1b")  # Close help
@@ -121,6 +146,11 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
             if columns < 100:
                 os.write(master, b"\x1b[21~")  # F10 preview pane
                 wait_for(b"real source preview")
+            os.write(master, b"\x1b[6~")  # PageDown, selection/query stay intact
+            wait_for(b"preview line 11")
+            wait_for(b"Query needle")
+            os.write(master, b"\x1b[5~")  # PageUp
+            wait_for(b"real source preview")
             os.write(master, b"\x03")
             deadline = time.monotonic() + 5
             while True:
@@ -141,6 +171,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
                     break
             assert b"\x1b[?1049l" in output, "Alternate screen was not restored"
             assert termios.tcgetattr(master) == before, "Terminal flags changed after exit"
+            assert os.read(stdout_read, 65536) == b"", "Terminal/clipboard output leaked to stdout"
             if columns == 80:
                 import re
                 assert not re.search(rb"\x1b\[[0-9;]*(?:38|48);(?:2|5);", output), "NO_COLOR emitted RGB/index colors"
@@ -150,3 +181,4 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
             except ProcessLookupError:
                 pass
             os.close(master)
+            os.close(stdout_read)

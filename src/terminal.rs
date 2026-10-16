@@ -25,11 +25,20 @@ impl TerminalSession {
         };
         enable_raw_mode()?;
         execute!(session.cleanup, EnterAlternateScreen, Hide)?;
-        session.terminal.clear()?;
+        session.redraw()?;
         Ok(session)
     }
     pub fn terminal(&mut self) -> &mut NativeTerminal {
         &mut self.terminal
+    }
+    pub fn perform(&mut self, action: &crate::action::Action) -> io::Result<()> {
+        action.write_to(&mut self.cleanup)
+    }
+    /// Fullscreen resize clears the back buffer without Crossterm's global
+    /// cursor query, which writes to stdout instead of the backend's tty.
+    pub fn redraw(&mut self) -> io::Result<()> {
+        let area = self.terminal.size()?.into();
+        self.terminal.resize(area)
     }
 }
 impl Drop for TerminalSession {
