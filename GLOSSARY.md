@@ -21,6 +21,13 @@ The search mode for finding text within files.
 The directory beneath which a search considers candidates.
 _Avoid_: Serving root
 
+**Project root**:
+The top-level directory of the Git working tree containing the launch CWD.
+
+**Launch CWD**:
+The working directory from which Dirpick was launched, independent of later
+browsing within Dirpick.
+
 **Query**:
 The text used to match candidates in the selected search mode.
 

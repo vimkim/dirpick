@@ -63,9 +63,20 @@ available through the existing `NO_COLOR` behavior.
 
 ### Startup
 
-Start in the launching directory with Files mode selected and the query focused.
-Search recursively beneath that directory. Enumeration, limits, ranking, and
-empty-query behavior remain open.
+Start at the project root with Files mode selected and the query focused.
+Search recursively beneath that directory. Project root means the top of the
+Git working tree containing the launch CWD; recognize linked worktrees as well
+as repositories with a `.git` directory. Outside a Git working tree, use the
+launch CWD as the default scope.
+
+Keep a visible Project / CWD toggle, with Project selected by default. CWD
+always means the directory from which Dirpick was launched, even after browsing.
+Switching presets preserves the mode, query, include/exclude filters, and Regex
+setting, then refreshes results and resets selection. Back restores the previous
+scope and search. Browsing or manually applying another scope remains available;
+show Custom when it matches neither preset. The prototype uses F7 for the toggle.
+
+Enumeration, limits, ranking, and empty-query behavior remain open.
 
 ### Query matching
 
@@ -98,7 +109,7 @@ and action contracts. The browser study remains at commit `ed6eb3a` as
 historical evidence; the user rejected its appearance as insufficiently TUI-like.
 
 The current study is a native Rust TUI on local branch `prototype/search-layouts`,
-commit `ad47a4f`, with entry point `prototypes/terminal/Cargo.toml`.
+commit `54be0b4`, with entry point `prototypes/terminal/Cargo.toml`.
 Its checkout is `/home/vimkim/gh/dirpick-prototype`. Run instructions and keys
 are in `prototypes/README.md` on that branch. Ratatui and Crossterm are prototype
 tools; the production framework choice remains open.
@@ -106,11 +117,14 @@ tools; the production framework choice remains open.
 It compares a compact flat picker (A), a grouped content workbench (B), and a
 directory tree (C), with the accepted controls above results and preview.
 F5 switches layouts while preserving the search; F6 loads sample workflows.
+F7 switches Project / launch CWD while keeping the search settings.
 All data are synthetic. Editor, clipboard, and shell actions remain simulated.
+The prototype uses fixed sample roots; real Git-root discovery remains to build.
 No winning layout has been selected.
 
 Actual PTY checks verified keyboard fields, regex error recovery, matching,
-selection, editor-overlay return, directory scope history, Unicode paths,
+selection, editor-overlay return, directory scope history, Project/CWD switching
+with settings preserved and a fixed launch CWD, Unicode paths,
 layout switching, resize from 120x32 to 80x24, and terminal flag/alternate-screen
 restoration on exit. Captures are under `prototypes/terminal/screenshots/`.
 These checks do not validate a real editor process or clipboard transport.
