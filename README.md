@@ -24,9 +24,10 @@ never prevents traversal into a directory that could have matching descendants.
 An invalid pattern marks its field, explains the error, and clears stale results
 until the pattern is fixed, including when Query or the directory is empty.
 
-The current build implements Files mode, path filters, and plain source previews.
+The current build implements Files mode, path filters, syntax previews, and
+absolute-path copy.
 The [approved release spec](https://github.com/vimkim/dirpick/issues/1) also
-covers directory/content modes, syntax colors, and external actions.
+covers directory/content modes and editor/shell actions.
 Those features arrive in subsequent implementation tickets.
 
 ## Keys
@@ -35,6 +36,7 @@ Those features arrive in subsequent implementation tickets.
 | --- | --- |
 | Up / Down | Select a file |
 | PageUp / PageDown | Scroll the preview independently |
+| Ctrl-Y | Send the exact selected absolute path through OSC 52; keep searching |
 | F7 | Switch Project / launch CWD, retaining the query |
 | F8 | Reveal / hide dotfiles and dot directories |
 | F9 | Bypass / respect ignore rules |
@@ -72,7 +74,24 @@ and vanished paths count as scan errors and show the first affected path.
 Binary and invalid UTF-8 files remain searchable, with a preview status instead
 of source text.
 Previews support files up to 2 MiB. Each preview window contains at most 200 lines
-and 64 KiB. Control characters appear as visible escapes.
+and 64 KiB of source text. Control characters appear as visible escapes. Embedded
+syntax definitions provide Mocha colors without runtime downloads, with plain
+text for unknown syntax. Multiline parsing retains preceding source context.
+Lines over 4 KiB disable syntax parsing from that line onward; oversized window
+lines show a clipped prefix with a limit notice. PageDown can inspect later lines.
+
+Ctrl-Y writes the selected absolute UTF-8 path to the controlling terminal as an
+OSC 52 clipboard payload. The feedback says **payload sent**, because terminal
+and SSH client clipboard acceptance cannot be confirmed. Write/flush failures
+leave the search and selection intact. Native path values retain spaces, quotes,
+Unicode, trailing whitespace, and newlines; displayed escapes are never copied.
+Paths outside the UTF-8 transport contract show a limitation instead of a lossy
+substitution. Your terminal must support and permit OSC 52 clipboard writes.
+
+Syntax-data and added transport dependency notices ship in
+`THIRD_PARTY_NOTICES.txt` and in the installed command via
+`dirpick --third-party-notices`. These third-party notices do not select a
+license for Dirpick itself.
 
 Dirpick uses `/dev/tty` for its interface and leaves stdout free of terminal output.
 Normal exit, input errors, failed terminal setup, and unwinding restore raw mode
@@ -90,7 +109,8 @@ cargo build --release --locked
 Tests use real filesystem and Git fixtures at the application session boundary.
 The focused Linux PTY check also requires Python 3 from the system.
 It verifies real input, path-filter editing and errors, independent traversal
-toggles, preview, help, narrow panes, `NO_COLOR`, and terminal flags.
+toggles, syntax preview, exact OSC 52 bytes in isolated PTYs, stdout separation,
+help, narrow panes, `NO_COLOR`, and restored terminal flags.
 
 Test installation without replacing an active command:
 

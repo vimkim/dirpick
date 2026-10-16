@@ -1,7 +1,7 @@
 //! Workbench rendering and keyboard editing. Filesystem work belongs to the session.
 use crate::{
     preview::display_text,
-    session::{Command, ScopePreset, SearchSession},
+    session::{Command, PreviewLine, ScopePreset, SearchSession},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -106,6 +106,7 @@ impl Field {
     }
 }
 struct Theme {
+    no_color: bool,
     base: Style,
     dim: Style,
     accent: Style,
@@ -116,6 +117,7 @@ impl Theme {
     fn new() -> Self {
         if std::env::var_os("NO_COLOR").is_some() {
             Self {
+                no_color: true,
                 base: Style::default(),
                 dim: Style::default(),
                 accent: Style::default().add_modifier(Modifier::BOLD),
@@ -127,6 +129,7 @@ impl Theme {
                 .bg(Color::Rgb(30, 30, 46))
                 .fg(Color::Rgb(205, 214, 244));
             Self {
+                no_color: false,
                 base,
                 dim: base.fg(Color::Rgb(166, 173, 200)),
                 accent: base
@@ -251,6 +254,9 @@ impl Workbench {
             }
             KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.focus = Focus::Scope
+            }
+            KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                session.command(Command::CopyPath)
             }
             KeyCode::Up => session.command(Command::MoveSelection(-1)),
             KeyCode::Down => session.command(Command::MoveSelection(1)),
@@ -464,14 +470,14 @@ impl Workbench {
                     self.theme.accent
                 },
             )),
-            Line::raw("↑↓ Select  PgUp/Dn Preview  F7 Scope  F8 Hidden  F9 Ignored  F12 Help"),
-            Line::raw("Tab Fields  Ctrl-F Query  Ctrl-L Scope  Alt-Left Back  Esc Quit"),
+            Line::raw("↑↓ Select  PgUp/Dn Preview  F7 Scope  F10 Pane  F12 Help"),
+            Line::raw("Ctrl-Y Copy  Tab Fields  Ctrl-F/L Query/Scope  Alt-Left Back  Esc Quit"),
         ];
         frame.render_widget(Paragraph::new(lines).style(self.theme.dim), vertical[3]);
         if self.help {
-            let popup = Rect::new(area.x + 4, area.y + 3, area.width - 8, 12);
+            let popup = Rect::new(area.x + 4, area.y + 3, area.width - 8, 13);
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
+            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nCtrl-Y: send exact absolute path through OSC 52\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
         }
     }
     fn field(
@@ -569,13 +575,97 @@ impl Workbench {
                 .lines
                 .iter()
                 .map(|line| {
-                    Line::from(vec![
-                        Span::styled(format!("{:>5}  ", line.number), self.theme.dim),
-                        Span::styled(display_text(&line.text), self.theme.base),
-                    ])
+                    let mut spans = vec![Span::styled(
+                        format!("{:>5}  ", line.number),
+                        self.theme.dim,
+                    )];
+                    spans.extend(self.source_spans(line));
+                    Line::from(spans)
                 })
                 .collect()
         };
-        frame.render_widget(Paragraph::new(lines).style(self.theme.base), inner);
+        let source_area = Rect {
+            height: inner.height.saturating_sub(1),
+            ..inner
+        };
+        frame.render_widget(Paragraph::new(lines).style(self.theme.base), source_area);
+        if inner.height > 0 {
+            let label = if state.preview.lines.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "Lines {}–{}/{} · PgUp/Dn{}{}",
+                    state.preview.top + 1,
+                    state.preview.top + state.preview.lines.len(),
+                    state.preview.total_lines,
+                    if state.preview.status.is_empty() {
+                        ""
+                    } else {
+                        " · "
+                    },
+                    state.preview.status
+                )
+            };
+            frame.render_widget(
+                Paragraph::new(label).style(self.theme.dim),
+                Rect::new(inner.x, inner.bottom() - 1, inner.width, 1),
+            );
+        }
+    }
+    fn source_spans(&self, line: &PreviewLine) -> Vec<Span<'static>> {
+        // Split by raw UTF-8 byte boundaries before escaping control characters;
+        // terminal escapes and tab expansion never alter source match offsets.
+        let mut boundaries = vec![0, line.text.len()];
+        for range in line
+            .spans
+            .iter()
+            .map(|span| &span.range)
+            .chain(line.matches.iter())
+        {
+            if range.start <= range.end
+                && range.end <= line.text.len()
+                && line.text.is_char_boundary(range.start)
+                && line.text.is_char_boundary(range.end)
+            {
+                boundaries.extend([range.start, range.end]);
+            }
+        }
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        boundaries
+            .windows(2)
+            .map(|pair| {
+                let start = pair[0];
+                let mut style = self.theme.base;
+                if !self.theme.no_color
+                    && let Some(syntax) = line.spans.iter().find(|span| span.range.contains(&start))
+                {
+                    style = style.fg(Color::Rgb(
+                        syntax.foreground[0],
+                        syntax.foreground[1],
+                        syntax.foreground[2],
+                    ));
+                    if syntax.bold {
+                        style = style.add_modifier(Modifier::BOLD);
+                    }
+                    if syntax.italic {
+                        style = style.add_modifier(Modifier::ITALIC);
+                    }
+                    if syntax.underline {
+                        style = style.add_modifier(Modifier::UNDERLINED);
+                    }
+                }
+                if line.matches.iter().any(|range| range.contains(&start)) {
+                    style = if self.theme.no_color {
+                        style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                    } else {
+                        style
+                            .bg(Color::Rgb(249, 226, 175))
+                            .fg(Color::Rgb(30, 30, 46))
+                    };
+                }
+                Span::styled(display_text(&line.text[start..pair[1]]), style)
+            })
+            .collect()
     }
 }

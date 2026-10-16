@@ -1,5 +1,6 @@
 //! Application boundary: commands in, observable state and generation events out.
 use crate::{
+    action::Action,
     preview::{self, PreviewRequest},
     search::{self, SearchRequest},
     worker::Worker,
@@ -51,9 +52,23 @@ pub struct SearchResult {
     pub line: usize,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PreviewSpan {
+    /// Half-open UTF-8 byte offsets in `PreviewLine::text`, before display escaping.
+    pub range: std::ops::Range<usize>,
+    pub foreground: [u8; 3],
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+}
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PreviewLine {
     pub number: usize,
+    /// Original source text; control characters are escaped only when rendered.
     pub text: String,
+    /// Syntax styles over the raw source. Empty means plain-text fallback.
+    pub spans: Vec<PreviewSpan>,
+    /// Half-open UTF-8 byte ranges in `text`, overlaid after syntax styles.
+    pub matches: Vec<std::ops::Range<usize>>,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Preview {
@@ -109,6 +124,7 @@ pub enum Command {
     ToggleScope,
     ApplyScope(PathBuf),
     Back,
+    CopyPath,
 }
 #[derive(Clone, Debug)]
 pub enum SearchEvent {
@@ -161,6 +177,7 @@ pub struct SearchSession {
     scope_id: u64,
     history: Vec<HistoryEntry>,
     restore: Option<(PathBuf, usize)>,
+    action: Option<Action>,
 }
 impl SearchSession {
     pub fn open(cwd: impl AsRef<Path>) -> io::Result<Self> {
@@ -239,6 +256,7 @@ impl SearchSession {
             }),
             history: Vec::new(),
             restore: None,
+            action: None,
         };
         session.refresh();
         Ok(session)
@@ -248,6 +266,22 @@ impl SearchSession {
     }
     pub fn command(&mut self, command: Command) {
         match command {
+            Command::CopyPath => {
+                self.action = None;
+                if let Some(row) = self.state.selected() {
+                    if row.path.to_str().is_some() && row.path.is_absolute() {
+                        self.action = Some(Action::CopyPath {
+                            path: row.path.clone(),
+                        });
+                        self.state.message = "Sending OSC 52 clipboard payload…".into();
+                    } else {
+                        self.state.message =
+                            "Cannot copy: OSC 52 requires an absolute UTF-8 path".into();
+                    }
+                } else {
+                    self.state.message = "Nothing selected to copy".into();
+                }
+            }
             Command::ToggleScope => {
                 let (scope, preset) = if self.state.preset == ScopePreset::Project {
                     (self.state.launch_cwd.clone(), ScopePreset::Cwd)
@@ -330,6 +364,20 @@ impl SearchSession {
             self.apply_event(event);
         }
     }
+    /// Consume a requested effect; the runtime supplies the terminal transport.
+    pub fn take_action(&mut self) -> Option<Action> {
+        self.action.take()
+    }
+    pub fn complete_action(&mut self, action: Action, result: io::Result<()>) {
+        match action {
+            Action::CopyPath { .. } => {
+                self.state.message = match result {
+                    Ok(()) => "OSC 52 payload sent · client acceptance unknown".into(),
+                    Err(error) => format!("Copy failed: {error} · search retained"),
+                };
+            }
+        }
+    }
     pub fn wait(&mut self, timeout: Duration) {
         if let Ok(event) = self.events.recv_timeout(timeout) {
             self.apply_event(event);
@@ -386,7 +434,14 @@ impl SearchSession {
                         .filter(|(path, _)| {
                             self.state.selected().is_some_and(|row| &row.path == path)
                         })
-                        .map_or(0, |(_, top)| *top);
+                        .map_or_else(
+                            || {
+                                self.state
+                                    .selected()
+                                    .map_or(0, |row| row.line.saturating_sub(11))
+                            },
+                            |(_, top)| *top,
+                        );
                     self.request_preview();
                 }
                 if done
@@ -458,7 +513,10 @@ impl SearchSession {
         let index = index.min(self.state.results.len().saturating_sub(1));
         if index != self.state.selected_index {
             self.state.selected_index = index;
-            self.state.preview.top = 0;
+            self.state.preview.top = self
+                .state
+                .selected()
+                .map_or(0, |row| row.line.saturating_sub(11));
             self.request_preview();
         }
     }

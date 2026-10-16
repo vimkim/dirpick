@@ -1,3 +1,4 @@
+pub mod action;
 pub mod preview;
 mod search;
 pub mod session;
