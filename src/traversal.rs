@@ -70,6 +70,11 @@ impl VisibilityPolicy {
     pub fn accepts(&self, relative: &str) -> bool {
         self.filters.accepts(relative)
     }
+
+    pub fn accepts_path(&self, path: &Path) -> bool {
+        path.strip_prefix(&self.scope)
+            .is_ok_and(|relative| self.accepts(&relative.to_string_lossy()))
+    }
 }
 
 #[derive(Clone)]

@@ -1,6 +1,6 @@
 # Dirpick
 
-Dirpick is a native terminal workbench for finding and previewing real files.
+Dirpick is a native terminal workbench for finding and previewing real paths.
 It runs on Linux terminals and over SSH, without Node, a browser, or a service.
 
 ## Run
@@ -24,17 +24,26 @@ never prevents traversal into a directory that could have matching descendants.
 An invalid pattern marks its field, explains the error, and clears stale results
 until the pattern is fixed, including when Query or the directory is empty.
 
-The current build implements Files mode, path filters, syntax previews, and
-absolute-path copy.
+F1 selects Files and F2 selects Directories. Both use the same fuzzy path queries,
+filters, Hidden, and Ignored settings. Directory previews list immediate children
+using the active search scope's relative-path filters and visibility rules. Enter
+on a directory browses into it and clears only Query; Alt-Left restores the prior
+mode, scope, settings, selection, and preview position when available.
+
+The current build implements Files and Directories modes, path filters, syntax
+previews, absolute-path copy, browsing, and Nushell directory actions.
 The [approved release spec](https://github.com/vimkim/dirpick/issues/1) also
-covers directory/content modes and editor/shell actions.
+covers Contents mode and editor actions.
 Those features arrive in subsequent implementation tickets.
 
 ## Keys
 
 | Key | Effect |
 | --- | --- |
-| Up / Down | Select a file |
+| F1 / F2 | Select Files / Directories, retaining search settings |
+| Up / Down | Select a result |
+| Enter on a directory | Browse inside Dirpick; clear only Query |
+| Ctrl-G | cd & exit for a directory through the Nushell wrapper |
 | PageUp / PageDown | Scroll the preview independently |
 | Ctrl-Y | Send the exact selected absolute path through OSC 52; keep searching |
 | F7 | Switch Project / launch CWD, retaining the query |
@@ -97,6 +106,36 @@ Dirpick uses `/dev/tty` for its interface and leaves stdout free of terminal out
 Normal exit, input errors, failed terminal setup, and unwinding restore raw mode
 and the alternate screen where cleanup remains possible.
 
+## Nushell setup
+
+Install the command with `cargo install --path . --locked`. Generate the supplied
+wrapper and load it in Nushell:
+
+```nu
+dirpick --print-nu-wrapper | save -f ~/.config/nushell/dirpick.nu
+use ~/.config/nushell/dirpick.nu dp
+dp
+```
+
+To keep `dp` available in future shells, add that `use` line to your Nu config
+yourself. Dirpick does not edit shell configuration. The wrapper is embedded in
+the binary, so it remains available after a temporary Cargo installation without
+the source checkout or a separate data installation.
+
+Within `dp`, F2 searches directories, Enter browses without changing the shell,
+and Ctrl-G changes the invoking Nu directory and exits. The wrapper uses ordinary
+`cd`, preserving Nu's normal directory behavior. It passes decoded paths as data;
+the appended separator preserves names ending in spaces, tabs, or newlines.
+Cancellation, plain quitting, copying, or failed picker execution never changes
+PWD. Invalid JSON, unexpected keys/actions/types, relative paths, and unavailable
+directories are rejected before `cd`.
+
+The wrapper invokes `dirpick --json`. That explicit integration mode emits one
+`{"action":"cd","path":"/exact/absolute/path"}` record only for Ctrl-G on a
+directory; other exits emit nothing. The interface and clipboard traffic stay on
+`/dev/tty`. Direct `dirpick` invocation explains setup on Ctrl-G and keeps the
+session open. Redirecting `--json` alone cannot change a parent shell directory.
+
 ## Check and build
 
 ```sh
@@ -110,7 +149,9 @@ Tests use real filesystem and Git fixtures at the application session boundary.
 The focused Linux PTY check also requires Python 3 from the system.
 It verifies real input, path-filter editing and errors, independent traversal
 toggles, syntax preview, exact OSC 52 bytes in isolated PTYs, stdout separation,
-help, narrow panes, `NO_COLOR`, and restored terminal flags.
+help, narrow panes, `NO_COLOR`, directory browsing/Back/cd & exit, and restored
+terminal flags. Nushell adapter tests require `nu` and verify actual PWD in
+isolated `nu --no-config-file` processes, including whitespace/newline paths.
 
 Test installation without replacing an active command:
 

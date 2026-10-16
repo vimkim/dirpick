@@ -1,6 +1,7 @@
 use crate::{
     search::deliver,
     session::{Preview, PreviewLine, PreviewSpan, SearchEvent},
+    traversal::VisibilityPolicy,
     worker::Cancellation,
 };
 use syntect::{
@@ -26,6 +27,7 @@ use std::{
 pub(crate) struct PreviewRequest {
     pub path: PathBuf,
     pub top: usize,
+    pub directory_policy: Option<VisibilityPolicy>,
 }
 pub(crate) fn run(
     id: u64,
@@ -38,6 +40,9 @@ pub(crate) fn run(
     }
 }
 fn read(request: &PreviewRequest, cancel: &Cancellation) -> Option<Preview> {
+    if let Some(policy) = &request.directory_policy {
+        return directory(request, policy, cancel);
+    }
     const FILE_BYTES: usize = 2 * 1024 * 1024;
     let mut preview = Preview {
         top: request.top,
@@ -177,6 +182,64 @@ fn read(request: &PreviewRequest, cancel: &Cancellation) -> Option<Preview> {
     });
     if preview.total_lines == 0 {
         preview.status = "Empty file".into();
+    }
+    (!cancel.cancelled()).then_some(preview)
+}
+
+fn directory(
+    request: &PreviewRequest,
+    policy: &VisibilityPolicy,
+    cancel: &Cancellation,
+) -> Option<Preview> {
+    let mut preview = Preview::default();
+    if !request.path.is_dir() {
+        preview.status = "Directory vanished or cannot be read".into();
+        return Some(preview);
+    }
+    let mut builder = policy.walker(&request.path, cancel.clone());
+    builder.max_depth(Some(1));
+    let mut children = Vec::new();
+    for (visited, entry) in builder.build().enumerate() {
+        if cancel.cancelled() {
+            return None;
+        }
+        if visited > 50_000 {
+            preview.status = "PARTIAL: directory preview entry limit".into();
+            break;
+        }
+        match entry {
+            Ok(entry) if entry.depth() == 1 && policy.accepts_path(entry.path()) => {
+                if let Some(error) = entry.error() {
+                    preview.status = format!("Cannot read directory: {error}");
+                }
+                let mut name = entry.file_name().to_string_lossy().into_owned();
+                if entry.file_type().is_some_and(|kind| kind.is_dir()) {
+                    name.push('/');
+                }
+                children.push((entry.path().to_owned(), name));
+            }
+            Err(error) => preview.status = format!("Cannot read directory: {error}"),
+            _ => {}
+        }
+    }
+    children.sort_by(|a, b| a.0.cmp(&b.0));
+    preview.total_lines = children.len();
+    preview.top = request.top.min(children.len().saturating_sub(1));
+    let mut used = 0;
+    for (index, (_, text)) in children.into_iter().enumerate().skip(preview.top).take(200) {
+        if used + text.len() > 64 * 1024 {
+            preview.status = "Directory preview window limited to 64 KiB".into();
+            break;
+        }
+        used += text.len();
+        preview.lines.push(PreviewLine {
+            number: index + 1,
+            text,
+            ..PreviewLine::default()
+        });
+    }
+    if preview.total_lines == 0 && preview.status.is_empty() {
+        preview.status = "No visible immediate children".into();
     }
     (!cancel.cancelled()).then_some(preview)
 }

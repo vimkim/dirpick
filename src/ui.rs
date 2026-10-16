@@ -1,7 +1,7 @@
 //! Workbench rendering and keyboard editing. Filesystem work belongs to the session.
 use crate::{
     preview::display_text,
-    session::{Command, PreviewLine, ScopePreset, SearchSession},
+    session::{Command, PreviewLine, ScopePreset, SearchMode, SearchSession},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -218,6 +218,8 @@ impl Workbench {
         }
         match key.code {
             KeyCode::Esc => return true,
+            KeyCode::F(1) => session.command(Command::SetMode(SearchMode::Files)),
+            KeyCode::F(2) => session.command(Command::SetMode(SearchMode::Directories)),
             KeyCode::F(12) => self.help = true,
             KeyCode::F(10) => self.preview_pane = !self.preview_pane,
             KeyCode::F(7) => {
@@ -258,6 +260,9 @@ impl Workbench {
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 session.command(Command::CopyPath)
             }
+            KeyCode::Char('g') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                session.command(Command::ChangeDirectory)
+            }
             KeyCode::Up => session.command(Command::MoveSelection(-1)),
             KeyCode::Down => session.command(Command::MoveSelection(1)),
             KeyCode::PageUp => session.command(Command::ScrollPreview(-10)),
@@ -266,6 +271,7 @@ impl Workbench {
                 self.applying_scope = Some(session.state().generation);
                 session.command(Command::ApplyScope(self.scope.text.clone().into()));
             }
+            KeyCode::Enter => session.command(Command::OpenSelected),
             _ => {
                 let field = match self.focus {
                     Focus::Query => &mut self.query,
@@ -311,7 +317,15 @@ impl Workbench {
             ])
             .split(area);
         frame.render_widget(
-            Paragraph::new(" dirpick │ Workbench │ Files").style(self.theme.accent),
+            Paragraph::new(format!(
+                " dirpick │ Workbench │ {}",
+                match state.mode {
+                    SearchMode::Files => "Files",
+                    SearchMode::Directories => "Directories",
+                    SearchMode::Contents => "Contents",
+                }
+            ))
+            .style(self.theme.accent),
             vertical[0],
         );
         let controls = Layout::default()
@@ -329,7 +343,7 @@ impl Workbench {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(Span::styled(
-                    "Files · fuzzy · smart case",
+                    "F1 Files · F2 Directories · fuzzy · smart case",
                     self.theme.accent,
                 )),
                 Line::raw(""),
@@ -437,8 +451,12 @@ impl Workbench {
             )
         } else {
             format!(
-                "{} files · {} visited · {} errors{}{}",
+                "{} {} · {} visited · {} errors{}{}",
                 state.results.len(),
+                match state.mode {
+                    SearchMode::Directories => "directories",
+                    _ => "files",
+                },
                 state.visited,
                 state.errors,
                 if state.entry_limit {
@@ -470,14 +488,14 @@ impl Workbench {
                     self.theme.accent
                 },
             )),
-            Line::raw("↑↓ Select  PgUp/Dn Preview  F7 Scope  F10 Pane  F12 Help"),
-            Line::raw("Ctrl-Y Copy  Tab Fields  Ctrl-F/L Query/Scope  Alt-Left Back  Esc Quit"),
+            Line::raw("↑↓ Select  Enter Browse  PgUp/Dn Preview  F7 Scope  F10 Pane  F12 Help"),
+            Line::raw("Ctrl-Y Copy  Ctrl-G cd & exit  Tab Fields  Alt-Left Back  Esc Quit"),
         ];
         frame.render_widget(Paragraph::new(lines).style(self.theme.dim), vertical[3]);
         if self.help {
-            let popup = Rect::new(area.x + 4, area.y + 3, area.width - 8, 13);
+            let popup = Rect::new(area.x + 4, area.y + 1, area.width - 8, 15);
             frame.render_widget(Clear, popup);
-            frame.render_widget(Paragraph::new("Tab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nCtrl-Y: send exact absolute path through OSC 52\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter in Scope: apply path; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
+            frame.render_widget(Paragraph::new("F1 / F2: Files / Directories\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear field; arrows/Home/End: edit\nUp / Down: select; PageUp / PageDown: preview\nCtrl-Y: send exact absolute path through OSC 52\nCtrl-G: directory cd & exit through Nushell wrapper\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude / Exclude: relative path regex, smart case\nEnter: browse; Enter in Scope: apply; Alt-Left: Back\nF10: Results / Preview on narrow terminals\nF12 / Esc: close help; Ctrl-C: quit").block(Block::default().borders(Borders::ALL).title(" Keyboard help ")).style(self.theme.base), popup);
         }
     }
     fn field(
@@ -546,7 +564,10 @@ impl Workbench {
                 } else if state.include_error.is_some() || state.exclude_error.is_some() {
                     "Invalid filters · edit marked fields"
                 } else {
-                    "No matching files"
+                    match state.mode {
+                        SearchMode::Directories => "No matching directories",
+                        _ => "No matching files",
+                    }
                 })
                 .style(self.theme.dim),
                 area.inner(ratatui::layout::Margin::new(2, 2)),
@@ -594,7 +615,12 @@ impl Workbench {
                 String::new()
             } else {
                 format!(
-                    "Lines {}–{}/{} · PgUp/Dn{}{}",
+                    "{} {}–{}/{} · PgUp/Dn{}{}",
+                    if state.mode == SearchMode::Directories {
+                        "Children"
+                    } else {
+                        "Lines"
+                    },
                     state.preview.top + 1,
                     state.preview.top + state.preview.lines.len(),
                     state.preview.total_lines,

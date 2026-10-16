@@ -3,6 +3,7 @@ use crate::{
     action::Action,
     preview::{self, PreviewRequest},
     search::{self, SearchRequest},
+    traversal::VisibilityPolicy,
     worker::Worker,
 };
 use std::{
@@ -32,16 +33,24 @@ pub enum ScopePreset {
     Cwd,
     Custom,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchMode {
+    Files,
+    Directories,
+    Contents,
+}
 #[derive(Clone, Debug)]
 pub struct Options {
     pub git_program: Option<OsString>,
     pub limits: Limits,
+    pub shell_integration: bool,
 }
 impl Default for Options {
     fn default() -> Self {
         Self {
             git_program: Some("git".into()),
             limits: Limits::default(),
+            shell_integration: false,
         }
     }
 }
@@ -80,6 +89,7 @@ pub struct Preview {
 }
 #[derive(Clone, Debug)]
 pub struct State {
+    pub mode: SearchMode,
     pub scope: PathBuf,
     pub launch_cwd: PathBuf,
     pub project_root: PathBuf,
@@ -113,6 +123,9 @@ impl State {
 }
 #[derive(Debug)]
 pub enum Command {
+    SetMode(SearchMode),
+    OpenSelected,
+    ChangeDirectory,
     SetQuery(String),
     SetInclude(String),
     SetExclude(String),
@@ -156,6 +169,7 @@ pub enum SearchEvent {
     },
 }
 struct HistoryEntry {
+    mode: SearchMode,
     scope: PathBuf,
     preset: ScopePreset,
     query: String,
@@ -178,6 +192,7 @@ pub struct SearchSession {
     history: Vec<HistoryEntry>,
     restore: Option<(PathBuf, usize)>,
     action: Option<Action>,
+    shell_integration: bool,
 }
 impl SearchSession {
     pub fn open(cwd: impl AsRef<Path>) -> io::Result<Self> {
@@ -202,6 +217,7 @@ impl SearchSession {
         let scope_tx = tx.clone();
         let mut session = Self {
             state: State {
+                mode: SearchMode::Files,
                 project_root: scope.clone(),
                 scope,
                 launch_cwd,
@@ -257,6 +273,7 @@ impl SearchSession {
             history: Vec::new(),
             restore: None,
             action: None,
+            shell_integration: options.shell_integration,
         };
         session.refresh();
         Ok(session)
@@ -266,6 +283,43 @@ impl SearchSession {
     }
     pub fn command(&mut self, command: Command) {
         match command {
+            Command::ChangeDirectory => {
+                self.action = None;
+                if self.state.mode != SearchMode::Directories || self.state.selected().is_none() {
+                    self.state.message =
+                        "Select a directory in F2 Directories for cd & exit".into();
+                } else if !self.shell_integration {
+                    self.state.message = "Nushell setup: dirpick --print-nu-wrapper; use the dp wrapper for cd & exit".into();
+                } else if let Some(row) = self.state.selected() {
+                    if row.path.is_absolute() && row.path.to_str().is_some() {
+                        self.action = Some(Action::ChangeDirectory {
+                            path: row.path.clone(),
+                        });
+                    } else {
+                        self.state.message =
+                            "Cannot cd: JSON requires an absolute UTF-8 path".into();
+                    }
+                }
+            }
+            Command::OpenSelected => {
+                if self.state.mode == SearchMode::Directories {
+                    if let Some(row) = self.state.selected() {
+                        self.command(Command::ApplyScope(row.path.clone()));
+                    } else {
+                        self.state.message = "No directory selected to browse".into();
+                    }
+                } else {
+                    self.state.message = "File opening is not available in this build".into();
+                }
+            }
+            Command::SetMode(mode) => {
+                if mode == SearchMode::Contents {
+                    self.state.message = "Contents mode is not available in this build".into();
+                } else if mode != self.state.mode {
+                    self.state.mode = mode;
+                    self.refresh();
+                }
+            }
             Command::CopyPath => {
                 self.action = None;
                 if let Some(row) = self.state.selected() {
@@ -304,6 +358,7 @@ impl SearchSession {
                 self.cancel_scope();
                 if let Some(previous) = self.history.pop() {
                     let target = previous.target;
+                    self.state.mode = previous.mode;
                     self.state.scope = previous.scope;
                     self.state.preset = previous.preset;
                     self.state.query = previous.query;
@@ -370,6 +425,11 @@ impl SearchSession {
     }
     pub fn complete_action(&mut self, action: Action, result: io::Result<()>) {
         match action {
+            Action::ChangeDirectory { .. } => {
+                if let Err(error) = result {
+                    self.state.message = format!("Cannot cd & exit: {error} · search retained");
+                }
+            }
             Action::CopyPath { .. } => {
                 self.state.message = match result {
                     Ok(()) => "OSC 52 payload sent · client acceptance unknown".into(),
@@ -483,6 +543,7 @@ impl SearchSession {
         self.cancel_scope();
         // History stores user state, not retained result batches.
         self.history.push(HistoryEntry {
+            mode: self.state.mode,
             scope: self.state.scope.clone(),
             preset: self.state.preset,
             query: self.state.query.clone(),
@@ -521,6 +582,7 @@ impl SearchSession {
         }
     }
     fn refresh(&mut self) {
+        self.action = None;
         self.restore = None;
         self.state.generation += 1;
         self.state.scanning = true;
@@ -540,6 +602,7 @@ impl SearchSession {
         self.search.submit(
             self.state.generation,
             SearchRequest {
+                mode: self.state.mode,
                 scope: self.state.scope.clone(),
                 query: self.state.query.clone(),
                 include: self.state.include.clone(),
@@ -558,6 +621,18 @@ impl SearchSession {
                 PreviewRequest {
                     path: row.path.clone(),
                     top: self.state.preview.top,
+                    directory_policy: (self.state.mode == SearchMode::Directories)
+                        .then(|| {
+                            VisibilityPolicy::compile(
+                                self.state.scope.clone(),
+                                &self.state.include,
+                                &self.state.exclude,
+                                self.state.hidden,
+                                self.state.ignored,
+                            )
+                            .ok()
+                        })
+                        .flatten(),
                 },
             );
             self.state.preview.loading = true;
