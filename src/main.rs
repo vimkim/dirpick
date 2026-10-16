@@ -6,7 +6,7 @@ fn run() -> io::Result<()> {
     match std::env::args_os().nth(1) {
         Some(argument) if argument == "--help" || argument == "-h" => {
             println!(
-                "dirpick — terminal Files search and preview\n\nUsage: dirpick\n\nLaunch in a directory; Project discovers the enclosing Git working tree.\nF7 switches to launch CWD. F12 shows keyboard help. Esc or Ctrl-C quits.\n--third-party-notices prints bundled syntax/transport license notices."
+                "dirpick — terminal Files/Contents search and preview\n\nUsage: dirpick\n\nLaunch in a directory; Project discovers the enclosing Git working tree.\nF1/F3 select Files/Contents; F4 toggles Regex. Enter opens the configured editor.\nF7 switches to launch CWD. F12 shows keyboard help. Esc or Ctrl-C quits.\n--third-party-notices prints bundled syntax/transport license notices."
             );
             return Ok(());
         }

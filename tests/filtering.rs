@@ -397,6 +397,8 @@ fn refinement_replaces_busy_scans_rejects_late_events_and_preserves_limit_status
             path: root.path().join("stale"),
             relative: "stale".into(),
             line: 1,
+            text: String::new(),
+            matches: Vec::new(),
         }],
         visited: 1,
         matched: 1,

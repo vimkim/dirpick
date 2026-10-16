@@ -26,6 +26,7 @@ use std::{
 pub(crate) struct PreviewRequest {
     pub path: PathBuf,
     pub top: usize,
+    pub content_pattern: Option<regex::Regex>,
 }
 pub(crate) fn run(
     id: u64,
@@ -164,7 +165,20 @@ fn read(request: &PreviewRequest, cancel: &Cancellation) -> Option<Preview> {
                     number: index + 1,
                     text: line[..end].to_owned(),
                     spans,
-                    matches: Vec::new(),
+                    matches: request
+                        .content_pattern
+                        .as_ref()
+                        .map_or_else(Vec::new, |pattern| {
+                            pattern
+                                .find_iter(line)
+                                .filter_map(|found| {
+                                    let range = found.start()..found.end().min(end);
+                                    (found.start() < end
+                                        || (found.is_empty() && found.start() == end))
+                                        .then_some(range)
+                                })
+                                .collect()
+                        }),
                 });
                 used += end;
                 if end < line.len() {

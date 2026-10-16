@@ -1,6 +1,6 @@
 # Dirpick
 
-Dirpick is a native terminal workbench for finding and previewing real files.
+Dirpick is a native terminal workbench for finding files and text, previewing source, and opening an editor.
 It runs on Linux terminals and over SSH, without Node, a browser, or a service.
 
 ## Run
@@ -24,17 +24,32 @@ never prevents traversal into a directory that could have matching descendants.
 An invalid pattern marks its field, explains the error, and clears stale results
 until the pattern is fixed, including when Query or the directory is empty.
 
-The current build implements Files mode, path filters, syntax previews, and
-absolute-path copy.
+F3 selects Contents mode: queries match literal text on individual lines by
+default. F4 toggles Regex. Queries use smart case in both settings; filters keep
+their independent regex and case rules. An empty content query shows guidance
+without scanning. Matching lines are grouped by file with 1-based line numbers;
+source previews show every matching span and start near the selected line.
+Mode changes keep Query, Include, Exclude, scope, Regex, Hidden, and Ignored.
+
+Enter opens the selected file at line one, or a content result at its exact
+line. Dirpick resolves VISUAL, then EDITOR, then nvim, parsing quoted executable
+arguments without shell evaluation. Vim and Neovim receive a separate +line
+argument before -- and the literal absolute path. Other editors can open file
+results; content locations require vim/nvim and show setup guidance for unsupported
+commands. The editor owns /dev/tty with normal terminal modes; success, nonzero
+exit, and spawn failure restore the search, selection, preview position, and TUI.
+
 The [approved release spec](https://github.com/vimkim/dirpick/issues/1) also
-covers directory/content modes and editor/shell actions.
-Those features arrive in subsequent implementation tickets.
+covers directory browsing and Nushell integration.
 
 ## Keys
 
 | Key | Effect |
 | --- | --- |
-| Up / Down | Select a file |
+| F1 / F3 | Select Files / Contents |
+| F4 | Toggle content Regex; retain it when changing modes |
+| Enter | Open the selected file or content line in the configured editor |
+| Up / Down | Select a result |
 | PageUp / PageDown | Scroll the preview independently |
 | Ctrl-Y | Send the exact selected absolute path through OSC 52; keep searching |
 | F7 | Switch Project / launch CWD, retaining the query |
@@ -62,7 +77,12 @@ Set `NO_COLOR` to use terminal default colors with selection markers and attribu
 Search and preview work run outside terminal input handling. Superseded searches
 cannot replace current results. A search visits at most 50,000 entries and retains
 the best 2,000 file paths. It continues scanning after the retention limit.
-The status line identifies scanning, errors, and partial results.
+Contents retains at most the first 5,000 matching lines and skips files over
+2 MiB, binary files, and invalid UTF-8, with skipped and failed counts. Content
+results also have a 16 MiB aggregate memory budget for source/path bytes and
+allocated match ranges. Reaching it stops before retaining an incomplete line
+and reports partial results with refinement guidance. These files remain
+available in Files mode. The status line identifies scanning, errors, and limits.
 
 Traversal respects `.gitignore`, `.ignore`, `.rgignore`, and Git exclude rules,
 including parent rules for nested CWD and Custom scopes. Hidden and Ignored are
@@ -110,7 +130,11 @@ Tests use real filesystem and Git fixtures at the application session boundary.
 The focused Linux PTY check also requires Python 3 from the system.
 It verifies real input, path-filter editing and errors, independent traversal
 toggles, syntax preview, exact OSC 52 bytes in isolated PTYs, stdout separation,
-help, narrow panes, `NO_COLOR`, and restored terminal flags.
+help, narrow panes, `NO_COLOR`, and restored terminal flags. Content tests cover
+literal/regex matching, all source spans, line identity, stale events/actions,
+file/entry/row/memory bounds, and missing files. Isolated fake editor processes
+in real PTYs prove exact argv, all child streams on the terminal, terminal
+release/reacquisition, and unchanged stdout on success and failure.
 
 Test installation without replacing an active command:
 

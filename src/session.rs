@@ -27,6 +27,12 @@ impl Default for Limits {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchMode {
+    Files,
+    Directories,
+    Contents,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScopePreset {
     Project,
     Cwd,
@@ -50,6 +56,8 @@ pub struct SearchResult {
     pub path: PathBuf,
     pub relative: String,
     pub line: usize,
+    pub text: String,
+    pub matches: Vec<std::ops::Range<usize>>,
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PreviewSpan {
@@ -80,6 +88,10 @@ pub struct Preview {
 }
 #[derive(Clone, Debug)]
 pub struct State {
+    pub mode: SearchMode,
+    pub regex: bool,
+    pub query_error: Option<String>,
+    pub skipped: usize,
     pub scope: PathBuf,
     pub launch_cwd: PathBuf,
     pub project_root: PathBuf,
@@ -113,6 +125,9 @@ impl State {
 }
 #[derive(Debug)]
 pub enum Command {
+    SetMode(SearchMode),
+    ToggleRegex,
+    OpenSelected,
     SetQuery(String),
     SetInclude(String),
     SetExclude(String),
@@ -128,6 +143,15 @@ pub enum Command {
 }
 #[derive(Clone, Debug)]
 pub enum SearchEvent {
+    InvalidQuery {
+        generation: u64,
+        message: String,
+    },
+    ContentStats {
+        generation: u64,
+        skipped: usize,
+        result_limit: bool,
+    },
     ScanError {
         generation: u64,
         message: String,
@@ -156,6 +180,8 @@ pub enum SearchEvent {
     },
 }
 struct HistoryEntry {
+    mode: SearchMode,
+    regex: bool,
     scope: PathBuf,
     preset: ScopePreset,
     query: String,
@@ -163,7 +189,7 @@ struct HistoryEntry {
     exclude: String,
     hidden: bool,
     ignored: bool,
-    target: Option<(PathBuf, usize)>,
+    target: Option<(PathBuf, usize, usize)>,
 }
 
 pub struct SearchSession {
@@ -176,7 +202,7 @@ pub struct SearchSession {
     scope_worker: Worker<PathBuf>,
     scope_id: u64,
     history: Vec<HistoryEntry>,
-    restore: Option<(PathBuf, usize)>,
+    restore: Option<(PathBuf, usize, usize)>,
     action: Option<Action>,
 }
 impl SearchSession {
@@ -202,6 +228,10 @@ impl SearchSession {
         let scope_tx = tx.clone();
         let mut session = Self {
             state: State {
+                mode: SearchMode::Files,
+                regex: false,
+                query_error: None,
+                skipped: 0,
                 project_root: scope.clone(),
                 scope,
                 launch_cwd,
@@ -266,6 +296,41 @@ impl SearchSession {
     }
     pub fn command(&mut self, command: Command) {
         match command {
+            Command::OpenSelected => {
+                self.action = None;
+                if let Some(row) = self.state.selected() {
+                    match crate::action::EditorCommand::from_environment(
+                        &row.path,
+                        row.line,
+                        self.state.mode == SearchMode::Contents,
+                    ) {
+                        Ok(_) => {
+                            self.action = Some(Action::OpenEditor {
+                                path: row.path.clone(),
+                                line: row.line,
+                            })
+                        }
+                        Err(error) => {
+                            self.state.message =
+                                format!("Cannot open editor: {error} · search retained")
+                        }
+                    }
+                } else {
+                    self.state.message = "Nothing selected to open".into();
+                }
+            }
+            Command::SetMode(mode) => {
+                if mode != self.state.mode {
+                    self.state.mode = mode;
+                    self.refresh();
+                }
+            }
+            Command::ToggleRegex => {
+                self.state.regex = !self.state.regex;
+                if self.state.mode == SearchMode::Contents {
+                    self.refresh();
+                }
+            }
             Command::CopyPath => {
                 self.action = None;
                 if let Some(row) = self.state.selected() {
@@ -304,6 +369,8 @@ impl SearchSession {
                 self.cancel_scope();
                 if let Some(previous) = self.history.pop() {
                     let target = previous.target;
+                    self.state.mode = previous.mode;
+                    self.state.regex = previous.regex;
                     self.state.scope = previous.scope;
                     self.state.preset = previous.preset;
                     self.state.query = previous.query;
@@ -370,6 +437,12 @@ impl SearchSession {
     }
     pub fn complete_action(&mut self, action: Action, result: io::Result<()>) {
         match action {
+            Action::OpenEditor { .. } => {
+                self.state.message = match result {
+                    Ok(()) => "Editor closed · search retained".into(),
+                    Err(error) => format!("Editor failed: {error} · search retained"),
+                };
+            }
             Action::CopyPath { .. } => {
                 self.state.message = match result {
                     Ok(()) => "OSC 52 payload sent · client acceptance unknown".into(),
@@ -387,6 +460,21 @@ impl SearchSession {
     /// Accept a worker event only while its identity still belongs to this session.
     pub fn apply_event(&mut self, event: SearchEvent) {
         match event {
+            SearchEvent::InvalidQuery {
+                generation,
+                message,
+            } if generation == self.state.generation => {
+                self.state.query_error = Some(message);
+                self.state.scanning = false;
+            }
+            SearchEvent::ContentStats {
+                generation,
+                skipped,
+                result_limit,
+            } if generation == self.state.generation => {
+                self.state.skipped = skipped;
+                self.state.result_limit = result_limit;
+            }
             SearchEvent::ScanError {
                 generation,
                 message,
@@ -411,28 +499,45 @@ impl SearchSession {
                 entry_limit,
                 done,
             } if generation == self.state.generation => {
-                let selected = self.state.selected().map(|row| row.path.clone());
+                let selected = self
+                    .state
+                    .selected()
+                    .map(|row| (row.path.clone(), row.line));
                 self.state.results = rows;
                 let target = self
                     .restore
                     .as_ref()
-                    .map(|(path, _)| path)
-                    .or(selected.as_ref());
+                    .map(|(path, line, _)| (path.clone(), *line))
+                    .or(selected.clone());
                 self.state.selected_index = target
-                    .and_then(|path| self.state.results.iter().position(|row| &row.path == path))
+                    .and_then(|(path, line)| {
+                        self.state
+                            .results
+                            .iter()
+                            .position(|row| row.path == path && row.line == line)
+                    })
                     .unwrap_or(0);
                 self.state.visited = visited;
                 self.state.matched = matched;
                 self.state.errors = errors;
                 self.state.entry_limit = entry_limit;
-                self.state.result_limit = matched > self.limits.results;
+                if self.state.mode != SearchMode::Contents {
+                    self.state.result_limit = matched > self.limits.results;
+                }
                 self.state.scanning = !done;
-                if selected != self.state.selected().map(|row| row.path.clone()) {
+                if selected
+                    != self
+                        .state
+                        .selected()
+                        .map(|row| (row.path.clone(), row.line))
+                {
                     self.state.preview.top = self
                         .restore
                         .as_ref()
-                        .filter(|(path, _)| {
-                            self.state.selected().is_some_and(|row| &row.path == path)
+                        .filter(|(path, line, _)| {
+                            self.state
+                                .selected()
+                                .is_some_and(|row| &row.path == path && row.line == *line)
                         })
                         .map_or_else(
                             || {
@@ -440,13 +545,17 @@ impl SearchSession {
                                     .selected()
                                     .map_or(0, |row| row.line.saturating_sub(11))
                             },
-                            |(_, top)| *top,
+                            |(_, _, top)| *top,
                         );
                     self.request_preview();
                 }
                 if done
-                    && let Some((path, _)) = self.restore.take()
-                    && !self.state.results.iter().any(|row| row.path == path)
+                    && let Some((path, line, _)) = self.restore.take()
+                    && !self
+                        .state
+                        .results
+                        .iter()
+                        .any(|row| row.path == path && row.line == line)
                 {
                     self.state.message =
                         "Previous selection unavailable; selected a remaining result".into();
@@ -483,6 +592,8 @@ impl SearchSession {
         self.cancel_scope();
         // History stores user state, not retained result batches.
         self.history.push(HistoryEntry {
+            mode: self.state.mode,
+            regex: self.state.regex,
             scope: self.state.scope.clone(),
             preset: self.state.preset,
             query: self.state.query.clone(),
@@ -493,7 +604,7 @@ impl SearchSession {
             target: self
                 .state
                 .selected()
-                .map(|row| (row.path.clone(), self.state.preview.top)),
+                .map(|row| (row.path.clone(), row.line, self.state.preview.top)),
         });
         self.state.scope = scope;
         self.state.preset = preset;
@@ -521,6 +632,7 @@ impl SearchSession {
         }
     }
     fn refresh(&mut self) {
+        self.action = None;
         self.restore = None;
         self.state.generation += 1;
         self.state.scanning = true;
@@ -529,6 +641,8 @@ impl SearchSession {
         self.state.visited = 0;
         self.state.matched = 0;
         self.state.errors = 0;
+        self.state.skipped = 0;
+        self.state.query_error = None;
         self.state.scan_error = None;
         self.state.entry_limit = false;
         self.state.result_limit = false;
@@ -540,6 +654,8 @@ impl SearchSession {
         self.search.submit(
             self.state.generation,
             SearchRequest {
+                mode: self.state.mode,
+                regex: self.state.regex,
                 scope: self.state.scope.clone(),
                 query: self.state.query.clone(),
                 include: self.state.include.clone(),
@@ -558,6 +674,9 @@ impl SearchSession {
                 PreviewRequest {
                     path: row.path.clone(),
                     top: self.state.preview.top,
+                    content_pattern: (self.state.mode == SearchMode::Contents)
+                        .then(|| search::content_pattern(&self.state.query, self.state.regex).ok())
+                        .flatten(),
                 },
             );
             self.state.preview.loading = true;

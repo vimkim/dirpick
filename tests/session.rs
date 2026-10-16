@@ -272,6 +272,8 @@ fn stale_generations_cannot_replace_results_and_streaming_keeps_selection_identi
                 path: root.path().join(name),
                 relative: name.to_string(),
                 line: 1,
+                text: String::new(),
+                matches: Vec::new(),
             })
             .collect(),
         visited: 2,

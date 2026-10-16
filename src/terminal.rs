@@ -32,7 +32,31 @@ impl TerminalSession {
         &mut self.terminal
     }
     pub fn perform(&mut self, action: &crate::action::Action) -> io::Result<()> {
-        action.write_to(&mut self.cleanup)
+        match action {
+            crate::action::Action::CopyPath { .. } => action.write_to(&mut self.cleanup),
+            crate::action::Action::OpenEditor { path, line } => {
+                let command =
+                    crate::action::EditorCommand::from_environment(path, *line, *line > 1)?;
+                let result = (|| {
+                    self.cleanup.flush()?;
+                    execute!(self.cleanup, LeaveAlternateScreen, Show)?;
+                    disable_raw_mode()?;
+                    command.run(&self.cleanup)
+                })();
+                // Restore on both failed spawn and successful/failed child return.
+                let restored = (|| {
+                    enable_raw_mode()?;
+                    execute!(self.cleanup, EnterAlternateScreen, Hide)?;
+                    self.redraw()
+                })();
+                match (result, restored) {
+                    (_, Err(error)) => Err(io::Error::other(format!(
+                        "Could not restore terminal after editor: {error}"
+                    ))),
+                    (result, Ok(())) => result,
+                }
+            }
+        }
     }
     /// Fullscreen resize clears the back buffer without Crossterm's global
     /// cursor query, which writes to stdout instead of the backend's tty.

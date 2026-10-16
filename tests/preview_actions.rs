@@ -189,6 +189,8 @@ fn a_selected_source_location_opens_with_nearby_context() {
             path,
             relative: "source.rs".into(),
             line: 250,
+            text: String::new(),
+            matches: Vec::new(),
         }],
         visited: 1,
         matched: 1,
