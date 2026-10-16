@@ -36,7 +36,8 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
                 send(b" p", "visible-child.txt")  # Space p preview
             wait_for("nested-child/")
             wait_for("visible-child.txt")
-            send(b"destination", "Query destination")
+            send(b"idestination", "Query destination")
+            send(b"\x1b", " NORMAL ")
             wait_for("Scanning", absent=True)
             wait_for("nested-child/")
             send(b"\r", "[Custom]")

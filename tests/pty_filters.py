@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-filters-") as root:
             wait_for("Hidden:off")
             wait_for("Ignored:off")
             wait_for("kept.rs")
-            send(b"\t[", "Invalid include regex")
+            send(b"i\t[", "Invalid include regex")
             wait_for("kept.rs", absent=True)
             send(b"\x15\\.rs$", "kept.rs")
             send(b"\tkept", "No matching files")
@@ -35,6 +35,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-filters-") as root:
             # Query -> Include -> Exclude -> Scope, then reverse the whole cycle.
             send(b"\t\t\t", "> Scope")
             send(b"\x1b[Z\x1b[Z\x1b[Z", "> Query")
+            send(b"\x1b", " NORMAL ")
             send(b" h", "Hidden:on")  # Space h
             wait_for(".secret.rs")
             wait_for("ignored.rs", absent=True)
@@ -43,7 +44,8 @@ with tempfile.TemporaryDirectory(prefix="dirpick-filters-") as root:
             send(b" h", "Hidden:off")
             wait_for(".secret.rs", absent=True)
             wait_for("ignored.rs")
-            send(b"\t\tignored", "ignored.rs", absent=True)
+            send(b"\t\tiignored", "ignored.rs", absent=True)
+            send(b"\x1b", " NORMAL ")
             send(b" ?", "Keyboard help")
             wait_for("Space h / i")
             send(b"\x1b", "Keyboard help", absent=True)

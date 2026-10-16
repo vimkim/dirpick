@@ -21,6 +21,11 @@ enum Focus {
     Exclude,
     Scope,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    Normal,
+    Insert,
+}
 #[derive(Default)]
 struct Field {
     text: String,
@@ -180,7 +185,7 @@ enum Shortcut {
     Pane,
     Help,
     Quit,
-    Space,
+    Query,
 }
 impl Shortcut {
     const ALL: [(char, Self); 11] = [
@@ -193,7 +198,7 @@ impl Shortcut {
         ('s', Self::Scope),
         ('p', Self::Pane),
         ('?', Self::Help),
-        (' ', Self::Space),
+        ('/', Self::Query),
         ('q', Self::Quit),
     ];
 
@@ -209,13 +214,14 @@ impl Shortcut {
             Self::Pane => "Results / Preview",
             Self::Help => "Help & full feedback",
             Self::Quit => "Quit",
-            Self::Space => "Insert a space",
+            Self::Query => "Edit Query",
         }
     }
 }
 
 pub struct Workbench {
     focus: Focus,
+    input_mode: InputMode,
     query: Field,
     include: Field,
     exclude: Field,
@@ -233,6 +239,7 @@ impl Workbench {
     pub fn new(session: &SearchSession) -> Self {
         let mut ui = Self {
             focus: Focus::Query,
+            input_mode: InputMode::Normal,
             query: Field::default(),
             include: Field::default(),
             exclude: Field::default(),
@@ -342,19 +349,41 @@ impl Workbench {
                         self.help_scroll = 0;
                     }
                     Shortcut::Quit => return true,
-                    Shortcut::Space => self.edit_field(session, key),
+                    Shortcut::Query => {
+                        self.focus = Focus::Query;
+                        self.input_mode = InputMode::Insert;
+                    }
                 }
             }
             return false;
         }
         match key.code {
-            KeyCode::Esc => return true,
+            KeyCode::Esc => self.input_mode = InputMode::Normal,
             KeyCode::Char(' ')
-                if !key
-                    .modifiers
-                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                if self.input_mode == InputMode::Normal
+                    && !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
             {
                 self.leader = true;
+            }
+            KeyCode::Char(character)
+                if self.input_mode == InputMode::Normal
+                    && !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                match character {
+                    'i' => self.input_mode = InputMode::Insert,
+                    '/' => {
+                        self.focus = Focus::Query;
+                        self.input_mode = InputMode::Insert;
+                    }
+                    'j' => session.command(Command::MoveSelection(1)),
+                    'k' => session.command(Command::MoveSelection(-1)),
+                    'q' => return true,
+                    _ => {}
+                }
             }
             KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
                 session.command(Command::Back);
@@ -380,10 +409,12 @@ impl Workbench {
                 }
             }
             KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.focus = Focus::Query
+                self.focus = Focus::Query;
+                self.input_mode = InputMode::Insert;
             }
             KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.focus = Focus::Scope
+                self.focus = Focus::Scope;
+                self.input_mode = InputMode::Insert;
             }
             KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 session.command(Command::CopyPath)
@@ -400,7 +431,8 @@ impl Workbench {
                 session.command(Command::ApplyScope(self.scope.text.clone().into()));
             }
             KeyCode::Enter => session.command(Command::OpenSelected),
-            _ => self.edit_field(session, key),
+            _ if self.input_mode == InputMode::Insert => self.edit_field(session, key),
+            _ => {}
         }
         false
     }
@@ -427,9 +459,11 @@ impl Workbench {
         if area.width < 70 || area.height < 18 {
             frame.render_widget(
                 Paragraph::new(if self.help {
-                    "Keyboard help · Ctrl-C quit\nEsc close help · Space opens shortcuts\nResize terminal to at least 70×18 for the workbench\nSpace f Files · Space d Directories · Space c Contents\nSpace r Regex · Space s Project/CWD · Space p Pane\nSpace h Hidden · Space i Ignored · Space Space insert space\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nCtrl-U clear · arrows/Home/End edit · Up/Down select\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview"
+                    "Keyboard help · Esc close · Ctrl-C quit\nNORMAL: i Insert · / edit Query · Space shortcuts\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down select · q / Ctrl-C quit\nSpace f Files · Space d Directories · Space c Contents\nSpace r Regex · Space s Project/CWD · Space p Pane\nSpace h Hidden · Space i Ignored · Space ? Help\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nCtrl-U clear · arrows/Home/End edit in Insert\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview"
+                } else if self.input_mode == InputMode::Insert {
+                    "dirpick · Resize terminal to at least 70×18\nINSERT · Type normally · Esc Normal · Ctrl-C quit"
                 } else {
-                    "dirpick · Resize terminal to at least 70×18\nSpace Shortcuts · Space ? Help · Esc / Ctrl-C quit"
+                    "dirpick · Resize terminal to at least 70×18\nNORMAL · i Edit · / Query · Space Shortcuts\nq / Ctrl-C quit · Space ? Help"
                 })
                 .wrap(Wrap { trim: false })
                 .style(self.theme.accent),
@@ -467,7 +501,12 @@ impl Workbench {
         }
         frame.render_widget(Paragraph::new(Line::from(modes)), header[0]);
         frame.render_widget(
-            Paragraph::new(" Space Shortcuts ").style(self.theme.badge(self.theme.accent)),
+            Paragraph::new(if self.input_mode == InputMode::Normal {
+                " Space Shortcuts "
+            } else {
+                " Esc Normal mode "
+            })
+            .style(self.theme.badge(self.theme.accent)),
             header[1],
         );
         let controls = Layout::default()
@@ -612,12 +651,17 @@ impl Workbench {
         let invalid_filters = state.query_error.is_some()
             || state.include_error.is_some()
             || state.exclude_error.is_some();
+        let details_hint = if self.input_mode == InputMode::Insert {
+            "Esc Space ?"
+        } else {
+            "Space ?"
+        };
         let status = if state.query_error.is_some() {
-            "Invalid content regex · Space ? details".into()
+            format!("Invalid content regex · {details_hint} details")
         } else if state.include_error.is_some() {
-            "Invalid include regex · Space ? details".into()
+            format!("Invalid include regex · {details_hint} details")
         } else if state.exclude_error.is_some() {
-            "Invalid exclude regex · Space ? details".into()
+            format!("Invalid exclude regex · {details_hint} details")
         } else if state.scope_loading {
             "Validating scope… current search retained".into()
         } else if state.scanning {
@@ -665,7 +709,7 @@ impl Workbench {
         };
         let mut detail = display_text(detail);
         if detail.width() > usize::from(vertical[3].width) {
-            let suffix = "… Space ? details";
+            let suffix = format!("… {details_hint} details");
             let available = usize::from(vertical[3].width).saturating_sub(suffix.width());
             let mut cells = 0;
             detail = detail
@@ -675,10 +719,17 @@ impl Workbench {
                     cells <= available
                 })
                 .collect::<String>();
-            detail.push_str(suffix);
+            detail.push_str(&suffix);
         }
         // Reserve one row each for completion/limits, action feedback, and help.
         // Long errors remain inspectable in help without displacing these rows.
+        let enter_label = if self.focus == Focus::Scope {
+            "Apply Scope"
+        } else if state.settings.mode == SearchMode::Directories {
+            "Browse"
+        } else {
+            "Editor"
+        };
         let lines = vec![
             Line::from(Span::styled(
                 status.clone(),
@@ -689,19 +740,34 @@ impl Workbench {
                 },
             )),
             Line::raw(detail),
-            Line::from(vec![
-                Span::styled(" Space Shortcuts ", self.theme.badge(self.theme.accent)),
-                Span::styled("  ↑↓ ", self.theme.directories),
-                Span::raw("Select  "),
-                Span::styled("Enter ", self.theme.files),
-                Span::raw(if state.settings.mode == SearchMode::Directories {
-                    "Browse  "
-                } else {
-                    "Editor  "
-                }),
-                Span::styled("Tab ", self.theme.contents),
-                Span::raw("Fields  Esc Quit"),
-            ]),
+            if self.input_mode == InputMode::Normal {
+                Line::from(vec![
+                    Span::styled(" NORMAL ", self.theme.badge(self.theme.directories)),
+                    Span::styled(" i ", self.theme.files),
+                    Span::raw("Edit "),
+                    Span::styled("/ ", self.theme.files),
+                    Span::raw("Query "),
+                    Span::styled("Space ", self.theme.accent),
+                    Span::raw("Keys "),
+                    Span::styled("j/k ", self.theme.directories),
+                    Span::raw("Select "),
+                    Span::styled("Enter ", self.theme.files),
+                    Span::raw(format!("{enter_label} ")),
+                    Span::styled("q ", self.theme.contents),
+                    Span::raw("Quit"),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled(" INSERT ", self.theme.badge(self.theme.files)),
+                    Span::raw(" Type to edit  "),
+                    Span::styled("Esc ", self.theme.directories),
+                    Span::raw("Normal  "),
+                    Span::styled("Tab ", self.theme.contents),
+                    Span::raw("Fields  "),
+                    Span::styled("Enter ", self.theme.files),
+                    Span::raw(enter_label),
+                ])
+            },
         ];
         frame.render_widget(Paragraph::new(lines).style(self.theme.dim), vertical[3]);
         if self.help {
@@ -728,7 +794,7 @@ impl Workbench {
                 }
             }
             let help = format!(
-                "Esc close help · Ctrl-C quit · PgUp/Dn scroll\nSpace: shortcut guide · Space Space: insert a space\nSpace f / d / c: Files / Directories / Contents\nSpace r: toggle content Regex\nSpace s: Project / immutable launch CWD\nSpace h / i: reveal Hidden / Ignored independently\nSpace p: Results/Preview below 100 columns\nSpace ?: help & full feedback · Space q: quit\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear; Left/Right/Home/End: edit\nUp/Down select · PageUp/PageDown preview\nCtrl-Y: exact absolute path via OSC 52\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nEnter browse/editor · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
+                "Esc close help · Ctrl-C quit · PgUp/Dn scroll\nNORMAL: i edit focused field · / edit Query\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down: select · q: quit\nSpace: shortcut guide in Normal\nSpace f / d / c: Files / Directories / Contents\nSpace r: toggle content Regex\nSpace s: Project / immutable launch CWD\nSpace h / i: reveal Hidden / Ignored independently\nSpace p: Results/Preview below 100 columns\nSpace /: edit Query · Space ?: help · Space q: quit\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: edit Query / Scope in Insert\nInsert Ctrl-U: clear; Left/Right/Home/End: edit\nPageUp/PageDown preview · Ctrl-Y: exact path via OSC 52\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nEnter browse/editor in either mode · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
                 feedback.join("\n")
             );
             let mut lines = Vec::new();
@@ -793,7 +859,7 @@ impl Workbench {
             .border_style(self.theme.accent)
             .style(self.theme.surface)
             .title(" Space → Shortcuts ")
-            .title_bottom(" Esc cancel · Space insert space ");
+            .title_bottom(" Esc cancel · / edit Query ");
         let inner = block.inner(popup);
         frame.render_widget(block, popup);
         let cells =
@@ -833,11 +899,7 @@ impl Workbench {
                         Shortcut::Ignored => (self.theme.contents, settings.ignored),
                         _ => (self.theme.accent, false),
                     };
-                    let key = if *key == ' ' {
-                        "Space".into()
-                    } else {
-                        format!("  {key}  ")
-                    };
+                    let key = format!("  {key}  ");
                     let state = match shortcut {
                         Shortcut::Files | Shortcut::Directories | Shortcut::Contents if enabled => {
                             " [active]"
@@ -898,7 +960,12 @@ impl Workbench {
             }),
             area,
         );
-        if focused && !self.help && !self.leader && available > 0 {
+        if focused
+            && self.input_mode == InputMode::Insert
+            && !self.help
+            && !self.leader
+            && available > 0
+        {
             frame.set_cursor_position((area.x + prefix.width() as u16 + cursor as u16, area.y));
         }
     }

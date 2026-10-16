@@ -14,8 +14,8 @@ Launch inside a Git working tree to search its Project root, including linked
 worktrees and submodules. Outside Git, Project uses the launch directory.
 The visible Project/CWD preset remains distinct when both paths are equal.
 
-Type whitespace-separated fuzzy path fragments in Query. Uppercase characters
-make the query case-sensitive. Exact basenames rank before basename prefixes,
+Press `/` and type whitespace-separated fuzzy path fragments in Query. Uppercase
+characters make the query case-sensitive. Exact basenames rank before basename prefixes,
 then other fuzzy matches. An empty query lists files in relative-path order.
 
 Include and Exclude are regex filters over slash-separated paths relative to the
@@ -52,43 +52,51 @@ Directory browsing and Nushell integration follow the
 
 ## Keys
 
-Press **Space** to open the shortcut guide, then a listed key to act.
+Dirpick starts in **Normal** mode. Press **i** to edit the focused field, or **/**
+to focus and edit Query. In **Insert** mode, type normally, including spaces.
+**Esc** returns to Normal. The footer shows a colored **NORMAL** or **INSERT**
+badge and the keys available in that mode. Esc also closes the guide or help;
+it never quits the application. Use **q** in Normal or **Ctrl-C** to quit.
+
+In Normal, press **Space** to open the shortcut guide, then a listed key to act.
 The header always shows Files, Directories, and Contents with their shortcut
-letters; the active mode has a colored badge and brackets. Green marks Files,
-blue Directories, and peach Contents. Focused fields have a contrasting
-background, search and result borders follow the mode color, and enabled
-traversal toggles light up.
+letters; the active search mode has a colored badge and brackets. Green marks
+Files, blue Directories, and peach Contents. Focused fields have a contrasting
+background, search and result borders follow the search mode color, and enabled
+traversal toggles light up. An unrecognized key leaves the guide open.
 
-Typing still edits the focused field directly. Press **Space Space** to insert
-a literal space in a query, filter, or scope path. Esc cancels the guide without
-changing the field; an unrecognized key leaves the guide open.
+Input mode (Normal or Insert) and search mode (Files, Directories, or Contents)
+are independent. Changing fields with Tab keeps the current input mode.
 
-| Key | Effect |
-| --- | --- |
-| Space | Open the shortcut guide |
-| Space Space | Insert a literal space in the focused field |
-| Space q | Quit |
-| Space f / Space d / Space c | Select Files / Directories / Contents |
-| Space r | Toggle content Regex and retain it when changing modes |
-| Enter | Open the selected file or content line in the configured editor |
-| Enter on a directory | Browse inside Dirpick and clear only Query |
-| Ctrl-G | cd & exit for a directory through the Nushell wrapper |
-| Up / Down | Select a result |
-| PageUp / PageDown | Scroll the preview independently |
-| Ctrl-Y | Send the exact selected absolute path through OSC 52 and keep searching |
-| Space s | Switch Project / launch CWD, retaining the query |
-| Space h | Reveal / hide dotfiles and dot directories |
-| Space i | Bypass / respect ignore rules |
-| Tab / Shift-Tab | Cycle Query, Include, Exclude, and Scope |
-| Ctrl-F / Ctrl-L | Focus Query / Scope |
-| Ctrl-U | Clear the focused field |
-| Left / Right / Home / End | Move the field cursor |
-| Enter in Scope | Apply a directory and clear only Query |
-| Alt-Left | Restore the previous scope, fields, toggles, selection, and preview position |
-| Space p | Switch Results / Preview below 100 columns |
-| Space ? | Show keyboard help |
-| Esc | Close the shortcut guide or help, or quit |
-| Ctrl-C | Quit |
+| Mode | Key | Effect |
+| --- | --- | --- |
+| Normal | i | Enter Insert to edit the focused field |
+| Normal | / or Space / | Focus Query and enter Insert |
+| Normal | Space | Open the shortcut guide |
+| Normal | q or Space q | Quit |
+| Normal | j / k | Select the next / previous result |
+| Normal | Space f / Space d / Space c | Select Files / Directories / Contents |
+| Normal | Space r | Toggle content Regex and retain it when changing search modes |
+| Normal | Space s | Switch Project / launch CWD, retaining the query |
+| Normal | Space h | Reveal / hide dotfiles and dot directories |
+| Normal | Space i | Bypass / respect ignore rules |
+| Normal | Space p | Switch Results / Preview below 100 columns |
+| Normal | Space ? | Show keyboard help and full feedback |
+| Insert | Text, including Space | Edit the focused field |
+| Insert | Ctrl-U | Clear the focused field |
+| Insert | Left / Right / Home / End | Move the field cursor |
+| Either | Esc | Return to Normal, or close the shortcut guide or help |
+| Either | Enter | Open the selected file or content line in the configured editor |
+| Either | Enter on a directory | Browse inside Dirpick and clear only Query |
+| Either | Enter in Scope | Apply a directory and clear only Query |
+| Either | Ctrl-G | cd & exit for a directory through the Nushell wrapper |
+| Either | Up / Down | Select a result |
+| Either | PageUp / PageDown | Scroll the preview independently |
+| Either | Ctrl-Y | Send the exact selected absolute path through OSC 52 and keep searching |
+| Either | Tab / Shift-Tab | Cycle Query, Include, Exclude, and Scope |
+| Either | Ctrl-F / Ctrl-L | Focus Query / Scope and enter Insert |
+| Either | Alt-Left | Restore the previous scope, fields, toggles, selection, and preview position |
+| Either | Ctrl-C | Quit |
 
 Relative scope paths resolve against the active scope. Invalid paths retain the
 active search and show an error. CWD always means the original launch directory.
@@ -104,7 +112,7 @@ source line or directory child remains reachable at 70×18. A shorter byte-limit
 window advances only past the rows it displayed. The preview footer shows the
 displayed range.
 The interface supports terminals of at least 70 columns and 18 rows. Below
-that size, `Space ?` opens basic help and Esc or Ctrl-C still exits.
+that size, Normal-mode `Space ?` opens basic help. Ctrl-C still exits.
 Set `NO_COLOR` to use terminal default colors with selection markers and attributes.
 Field editing and cursor positioning use Unicode terminal display widths.
 Source clipping keeps complete graphemes, including joined emoji, and measures
@@ -113,9 +121,10 @@ a match inside a composed grapheme highlights the complete glyph.
 
 The footer reserves separate rows for completion or limits, action feedback,
 and key guidance. `PARTIAL` appears first when a search reaches a limit.
-Long feedback shows `Space ? details`. In help, PageUp/PageDown scroll and Home/End
-show the first or last page, including complete error and action messages.
-Esc closes help first. Ctrl-C exits even while help is open.
+Long feedback shows `Space ? details` in Normal or `Esc Space ? details` in Insert.
+In help, PageUp/PageDown scroll and Home/End show the first or last page,
+including complete error and action messages.
+Esc closes help and returns to Normal. Ctrl-C exits even while help is open.
 
 ## Limits and terminal behavior
 
@@ -184,7 +193,7 @@ yourself. Dirpick does not edit shell configuration. The binary embeds the wrapp
 so the wrapper remains available after temporary Cargo installation without the
 source checkout or a separate data installation.
 
-Within `dp`, `Space d` searches directories, Enter browses without changing the
+Within `dp`, Normal-mode `Space d` searches directories, Enter browses without changing the
 shell, and Ctrl-G changes the invoking Nu directory and exits. The wrapper uses
 ordinary `cd`, preserving Nu's normal directory behavior. It passes decoded paths as data.
 The appended separator preserves names ending in spaces, tabs, or newlines.

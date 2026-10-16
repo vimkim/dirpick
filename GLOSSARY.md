@@ -5,6 +5,11 @@ terminal. These terms describe its search interaction.
 
 ## Language
 
+**Input mode**:
+The keyboard interaction state: Normal invokes shortcuts and navigates results;
+Insert edits the focused Query, Include filter, Exclude filter, or Search scope
+field. Input mode is independent of Search mode.
+
 **Search mode**:
 The kind of candidate sought by a search: Files, Directories, or Contents.
 

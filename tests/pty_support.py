@@ -12,6 +12,7 @@ class Screen:
         self.x = self.y = 0
         self.pending = ""
         self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self.normal_screen = None
 
     def feed(self, chunk):
         self.pending += self.decoder.decode(chunk)
@@ -37,6 +38,19 @@ class Screen:
                     if self.y < self.rows:
                         for x in range(min(self.x, self.columns), self.columns):
                             self.cells[self.y][x] = " "
+                elif final == "h" and parameters == "?1049":
+                    self.normal_screen = (self.cells, self.x, self.y)
+                    self.cells = [[" "] * self.columns for _ in range(self.rows)]
+                    self.x = self.y = 0
+                elif final == "l" and parameters == "?1049":
+                    # Resizing starts a fresh model while the process is still
+                    # in its alternate screen. Its original normal screen is blank.
+                    if self.normal_screen is None:
+                        self.cells = [[" "] * self.columns for _ in range(self.rows)]
+                        self.x = self.y = 0
+                    else:
+                        self.cells, self.x, self.y = self.normal_screen
+                    self.normal_screen = None
                 elif final == "C":
                     self.x += values[0] or 1
                 elif final == "D":

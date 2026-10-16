@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-unicode-preview-") as root:
         assert family * 10 + "TAIL" in emitted, emitted
         assert "éX\\tcontrol\\u{1b}" in emitted, emitted
         start = len(picker.output)
-        picker.send(" c👩", "1 matching lines")
+        picker.send(" ci👩", "1 matching lines")
         picker.wait("Lines 1–2/2")
         highlighted = picker.output[start:]
         assert b"48;2;249;226;175" in highlighted, highlighted

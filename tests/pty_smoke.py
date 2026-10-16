@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
             assert b"\x1b[?1049h" in output
             if columns >= 100:
                 assert re.search(rb"38;2;203;166;247", output), "Rust syntax keyword was not colored"
-            os.write(master, b"no-such-file")
+            os.write(master, b"ino-such-file")
             wait_for(b"No matching files")
             os.write(master, b"\x15needle")
             wait_for(b"Query needle")
@@ -38,6 +38,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
             assert clipboards, "No clipboard payload reached the controlling terminal"
             assert base64.b64decode(clipboards[-1]) == os.fsencode(selected_path)
             wait_for(b"Query needle")
+            picker.send(b"\x1b", " NORMAL ")
             os.write(master, b" ?")  # Space ? help
             wait_for(b"Keyboard help")
             os.write(master, b"\x1b")  # Close help

@@ -326,7 +326,7 @@ impl SearchSession {
                     || self.state.selected().is_none()
                 {
                     self.state.message =
-                        "Select a directory in Directories (Space d) for cd & exit".into();
+                        "Select a directory in Directories (Esc, Space d) for cd & exit".into();
                 } else if !self.shell_integration {
                     self.state.message = "Nushell setup: dirpick --print-nu-wrapper; use the dp wrapper for cd & exit".into();
                 } else if let Some(row) = self.state.selected() {

@@ -60,14 +60,15 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
             wait_for("Results · 1")
             if mode not in ("files", "generic"):
                 send(b" c", "Type a content query")
-                send(b"needle", "needle 251")
+                send(b"ineedle", "needle 251")
                 wait_for("needle 260")
                 if columns < 100:
+                    send(b"\x1b", " NORMAL ")
                     send(b" p", "needle 251")  # Space p preview
                 # Matching rows are grouped beneath the file, then selected by line.
                 send(b"\x1b[B", "needle 260")
                 send(b"\x1b[6~", paged_context)
-                send(b"\t\\.rs$", "Include \\.rs$")
+                send(b"\x06\t\\.rs$", "Include \\.rs$")
                 # Effective settings select the first row; select the second again.
                 wait_for("needle 251")
                 send(b"\x1b[B", "needle 260")
@@ -91,6 +92,7 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
                 wait_for("Content locations require")
                 assert not os.path.exists(record)
             # Full action errors remain available even when their footer row clips.
+            send(b"\x1b", " NORMAL ")
             send(b" ?", "Keyboard help")
             send(b"\x1b[F", "retained")
             if mode == "unsupported":

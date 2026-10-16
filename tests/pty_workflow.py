@@ -34,7 +34,8 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, viewport_root, 70, 18)
     try:
         picker.wait("context.rs")
-        picker.send(b" cneedle", "Results · 1")
+        picker.send(b" cineedle", "Results · 1")
+        picker.send(b"\x1b", " NORMAL ")
         picker.send(b" p", "selected needle 260")
         picker.send(b"\x03")
         assert picker.finish() == b""
@@ -48,8 +49,9 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, memory_root, 70, 18)
     try:
         picker.wait("minified.txt")
-        picker.send(b" cx", "PARTIAL")
+        picker.send(b" cix", "PARTIAL")
         picker.wait("16 MiB")
+        picker.send(b"\x1b", " NORMAL ")
         picker.wait("Space Shortcuts")
         picker.send(b" ?", "Keyboard help")
         picker.send(b"\x1b[F", "filters")
@@ -63,10 +65,12 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, root, 70, 18)
     try:
         picker.wait("source.rs")
-        picker.send(b" climit", "PARTIAL")  # Contents, row retention limit
+        picker.send(b" cilimit", "PARTIAL")  # Contents, row retention limit
+        picker.send(b"\x1b", " NORMAL ")
         picker.wait("Space Shortcuts")
         picker.send(b"\x19", "payload sent")
         picker.wait("PARTIAL")
+        picker.send(b"\x1b", " NORMAL ")
         picker.wait("Space Shortcuts")
         picker.send(b"\x03")
         assert picker.finish() == b""
@@ -83,7 +87,8 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, error_root, 70, 18)
     try:
         picker.wait("dirpick")
-        picker.send(b" cneedle", "1 errors")
+        picker.send(b" cineedle", "1 errors")
+        picker.send(b"\x1b", " NORMAL ")
         picker.wait("Space Shortcuts")
         picker.send(b" ?", "Keyboard help")
         picker.send(b"\x1b[F", "(os error 13)")  # End: full feedback across wrapped lines
@@ -131,7 +136,7 @@ input()
         preview_pane = False
         try:
             picker.wait("[Project]")
-            picker.send("needle", "Query needle")
+            picker.send("ineedle", "Query needle")
             picker.send("\t\\.rs$", "Include \\.rs$")
             picker.send("\ttop", "Exclude top")
             picker.wait("Results · 1")
@@ -154,6 +159,7 @@ input()
             picker.send(b"\x19", "payload sent")
             payloads = re.findall(rb"\x1b\]52;c;([^\x07]*)\x07", picker.output)
             assert base64.b64decode(payloads[-1]) == os.fsencode(selected)
+            picker.send(b"\x1b", " NORMAL ")
             picker.send(b" s", "[CWD]")  # Space s, shared fields preserved
             picker.wait("Query needle")
             picker.wait("Include \\.rs$")
@@ -196,16 +202,20 @@ input()
             picker.send(b"\x1b[1;3D", "Query needle")
             picker.wait(f"context {scroll_first}")
             picker.send(b"\x06", "> Query")
+            picker.send(b"\x1b", " NORMAL ")
             picker.send(b" h i", "Hidden:on  i Ignored:on")
             picker.send(b" d", "[d Directories]")
-            picker.send(b"\t\x15", "> Include")
+            picker.send(b"\ti\x15", "> Include")
             picker.wait("Children 1") if columns >= 100 or preview_pane else None
             children_page = f"Children {rows - 13}"
             picker.send(b"\x06\x1b[6~", children_page)
             picker.send(b"\r", "[Custom]")
             picker.wait("Query needle", absent=True)
             # Deliberately change shared state inside the browsed scope.
-            picker.send(b" fjunk h r", "0 files")
+            picker.send(b"\x1b", " NORMAL ")
+            picker.send(b" fijunk", "0 files")
+            picker.send(b"\x1b", " NORMAL ")
+            picker.send(b" h r", "Hidden:off")
             picker.send(b"\x1b[1;3D", "[d Directories]")
             picker.wait("Query needle")
             picker.wait("Hidden:on  i Ignored:on")
@@ -225,8 +235,12 @@ input()
         picker = Picker(binary, launch, columns, rows, ["--json"])
         try:
             picker.wait("dirpick")
-            picker.send(b"needle c\x15context d")
-            picker.send(b"\x1b" if columns == 80 else b"\x03")
+            picker.send(b"ineedle")
+            picker.send(b"\x1b", " NORMAL ")
+            picker.send(b" ci\x15context")
+            picker.send(b"\x1b", " NORMAL ")
+            picker.send(b" d")
+            picker.send(b"q" if columns == 80 else b"\x03")
             assert picker.finish() == b""
         finally:
             picker.close()
