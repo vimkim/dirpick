@@ -183,6 +183,18 @@ class Picker:
                 break
         assert b"\x1b[?1049l" in self.output, "Alternate screen was not restored"
         assert termios.tcgetattr(self.master) == self.before, "Terminal flags were not restored"
+        synchronized, visible = False, True
+        for command in re.findall(rb"\x1b\[[0-9;?]*[hl]|\x1b\]52;[^\x07]*\x07", self.output):
+            if command == b"\x1b[?2026h":
+                assert not synchronized, "Synchronized frames must not nest"
+                synchronized = True
+            elif command == b"\x1b[?2026l":
+                synchronized = False
+            elif command in (b"\x1b[?25h", b"\x1b[?25l"):
+                visible = command.endswith(b"h")
+            elif command in (b"\x1b[?1049h", b"\x1b[?1049l") or command.startswith(b"\x1b]52;"):
+                assert not synchronized, "Synchronization crossed an alternate-screen or clipboard handoff"
+        assert not synchronized and visible, "Terminal cursor/synchronization was not restored"
         return os.read(self.stdout_read, 65536)
 
     def close(self):

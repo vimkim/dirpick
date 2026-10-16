@@ -1,17 +1,23 @@
 //! The controlling terminal is separate from stdout, reserved for future actions.
+mod render;
+
 use crossterm::{
     cursor::{Hide, Show},
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{
+        EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
+    },
 };
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{Frame, Terminal, layout::Size};
+use render::{FrameBackend, present};
 use std::{
     fs::{File, OpenOptions},
     io::{self, Write},
     os::fd::AsRawFd,
 };
 
-pub type NativeTerminal = Terminal<CrosstermBackend<File>>;
+type NativeTerminal = Terminal<FrameBackend<File>>;
 pub struct TerminalSession {
     terminal: NativeTerminal,
     cleanup: File,
@@ -29,7 +35,7 @@ impl TerminalSession {
         }
         let original_modes = unsafe { original_modes.assume_init() };
         let mut session = Self {
-            terminal: Terminal::new(CrosstermBackend::new(writer))?,
+            terminal: Terminal::new(FrameBackend::new(writer))?,
             cleanup,
             original_modes,
         };
@@ -38,8 +44,13 @@ impl TerminalSession {
         session.redraw()?;
         Ok(session)
     }
-    pub fn terminal(&mut self) -> &mut NativeTerminal {
-        &mut self.terminal
+    pub fn size(&self) -> io::Result<Size> {
+        self.terminal.size()
+    }
+    pub fn draw(&mut self, render: impl FnOnce(&mut Frame)) -> io::Result<()> {
+        present(&mut self.terminal, |terminal| {
+            terminal.draw(render).map(|_| ())
+        })
     }
     pub fn perform(&mut self, action: &crate::action::Action) -> io::Result<()> {
         match action {
@@ -81,7 +92,10 @@ impl TerminalSession {
     /// cursor query, which writes to stdout instead of the backend's tty.
     pub fn redraw(&mut self) -> io::Result<()> {
         let area = self.terminal.size()?.into();
-        self.terminal.resize(area)
+        present(&mut self.terminal, |terminal| {
+            terminal.hide_cursor()?;
+            terminal.resize(area)
+        })
     }
     fn restore_modes(&self) -> io::Result<()> {
         // SAFETY: the descriptor remains open and original_modes came from a
@@ -104,7 +118,12 @@ impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
         let _ = self.restore_modes();
-        let _ = execute!(self.cleanup, LeaveAlternateScreen, Show);
+        let _ = execute!(
+            self.cleanup,
+            EndSynchronizedUpdate,
+            LeaveAlternateScreen,
+            Show
+        );
         let _ = self.cleanup.flush();
     }
 }

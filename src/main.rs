@@ -52,7 +52,7 @@ fn run() -> io::Result<()> {
     let mut ui = Workbench::new(&session);
     let mut terminal = TerminalSession::open()?;
     loop {
-        ui.resize(&mut session, terminal.terminal().size()?.height);
+        ui.resize(&mut session, terminal.size()?.height);
         session.poll();
         while let Some(action) = session.take_action() {
             if matches!(action, Action::ChangeDirectory { .. }) {
@@ -73,7 +73,7 @@ fn run() -> io::Result<()> {
             session.complete_action(action, result);
         }
         ui.observe(&session);
-        terminal.terminal().draw(|frame| ui.draw(frame, &session))?;
+        terminal.draw(|frame| ui.draw(frame, &session))?;
         if event::poll(Duration::from_millis(25))? {
             match event::read()? {
                 Event::Key(key) if key.kind != KeyEventKind::Release => {

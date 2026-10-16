@@ -18,3 +18,14 @@ fn space_shortcuts_preserve_editing_and_remain_discoverable_across_sizes() {
         .expect("python3 is required for the Linux PTY shortcut check");
     assert!(status.success());
 }
+
+#[test]
+fn query_redraw_keeps_intermediate_cursor_movements_hidden() {
+    let status = std::process::Command::new("python3")
+        .arg("-B")
+        .arg("tests/pty_cursor.py")
+        .arg(env!("CARGO_BIN_EXE_dirpick"))
+        .status()
+        .expect("python3 is required for the Linux PTY cursor check");
+    assert!(status.success());
+}

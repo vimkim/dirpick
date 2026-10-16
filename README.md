@@ -228,7 +228,9 @@ Tests use real filesystem and Git fixtures at the application session boundary.
 The Linux PTY checks require Python 3. The Nu integration checks require Nushell.
 PTY checks cover real input, path-filter errors, independent traversal toggles,
 and syntax preview. They also cover exact OSC 52 bytes, stdout separation,
-help, narrow panes, `NO_COLOR`, and restored terminal flags. Content tests cover
+help, narrow panes, `NO_COLOR`, and restored terminal flags. Cursor checks audit
+intermediate repaint commands, synchronized frame boundaries, and caret ordering
+for terminals that ignore synchronized updates. Content tests cover
 literal/regex matching, all source spans, line identity, stale events/actions,
 file/entry/row/memory bounds, and missing files. Isolated fake editor processes
 in real PTYs prove exact argv, all child streams on the terminal, terminal
