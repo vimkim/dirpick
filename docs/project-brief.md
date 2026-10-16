@@ -51,6 +51,8 @@ line. Build complete workflows one at a time within that release.
 Mode, scope, query, include, and exclude controls stay visible above side-by-side
 results and preview. Tab moves between fields. Current settings remain visible.
 Narrow-terminal behavior and the remaining keybindings are still open.
+The user found the browser mockups did not look like a TUI. Evaluate the layout
+in the running terminal prototype when choosing the design.
 
 ### Startup
 
@@ -85,21 +87,30 @@ the Contents query's Regex toggle.
 ## Layout prototype
 
 The user requested design prototypes after accepting the matching, filter,
-and action contracts. The self-contained browser study is preserved on local
-branch `prototype/search-layouts`, commit `ed6eb3a`, at
-`prototypes/search-layouts.html`.
-Its current checkout is `/home/vimkim/gh/dirpick-prototype`.
+and action contracts. The browser study remains at commit `ed6eb3a` as
+historical evidence; the user rejected its appearance as insufficiently TUI-like.
+
+The current study is a native Rust TUI on local branch `prototype/search-layouts`,
+commit `34bca7b`, with entry point `prototypes/terminal/Cargo.toml`.
+Its checkout is `/home/vimkim/gh/dirpick-prototype`. Run instructions and keys
+are in `prototypes/README.md` on that branch. Ratatui and Crossterm are prototype
+tools; the production framework choice remains open.
 
 It compares a compact flat picker (A), a grouped content workbench (B), and a
-directory tree (C), all with the accepted search controls above results and
-preview. Sample search, filtering, selection, scope history, and simulated
-editor/copy/cd actions are interactive. No winning layout has been selected.
+directory tree (C), with the accepted controls above results and preview.
+F5 switches layouts while preserving the search; F6 loads sample workflows.
+All data are synthetic. Editor, clipboard, and shell actions remain simulated.
+No winning layout has been selected.
 
-The prototype proposes shared mode-switch state and a stacked narrow layout;
-these have not been accepted yet. Its browser checks do not establish real
-terminal key handling or restoration. Keep the prototype code off the main
-branch; carry the selected design into the implementation spec. Add a pointer
-to the prototype branch and path when implementation tickets are created.
+Actual PTY checks verified keyboard fields, regex error recovery, matching,
+selection, editor-overlay return, directory scope history, Unicode paths,
+layout switching, resize from 120x32 to 80x24, and terminal flag/alternate-screen
+restoration on exit. Captures are under `prototypes/terminal/screenshots/`.
+These checks do not validate a real editor process or clipboard transport.
+
+Shared mode-switch state remains a prototype assumption. Keep prototype code
+off the main branch and carry the selected design into the implementation spec.
+Add its branch and path to the relevant implementation ticket when tickets exist.
 
 ## Decisions still open
 
