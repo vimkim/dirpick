@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-preview-") as root:
     picker = Picker(binary, root, 70, 18)
     try:
         picker.send("source.txt", "Results · 1")
-        picker.send(b"\x1b[21~", "source-001")
+        picker.send(b" p", "source-001")
         picker.wait("source-005")
         # Five rows are visible. Each page overlaps one row, so the first
         # page must expose 6–9 instead of jumping over unseen source.
@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-preview-") as root:
                 picker.wait(f"source-{number:03}")
         picker.send(b"\x1b[5~", "source-045")
         picker.wait("Query source.txt")
-        picker.send(b"\x1bOQ\x15destination", "Workbench │ Directories")
+        picker.send(b" d\x15destination", "[d Directories]")
         picker.wait("child-001")
         for first in range(5, 50, 4):
             picker.send(b"\x1b[6~", f"child-{first:03}")

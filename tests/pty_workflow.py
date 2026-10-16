@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
         picker.wait("source.rs")
         picker.resize(60, 12)
         picker.wait("Resize terminal")
-        picker.send(b"\x1b[24~", "Keyboard help")
+        picker.send(b" ?", "Keyboard help")
         picker.wait("Ctrl-C")
         picker.send(b"\x1b", "Keyboard help", absent=True)
         picker.send(b"\x03")
@@ -34,8 +34,8 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, viewport_root, 70, 18)
     try:
         picker.wait("context.rs")
-        picker.send(b"\x1bORneedle", "Results · 1")
-        picker.send(b"\x1b[21~", "selected needle 260")
+        picker.send(b" cneedle", "Results · 1")
+        picker.send(b" p", "selected needle 260")
         picker.send(b"\x03")
         assert picker.finish() == b""
     finally:
@@ -48,10 +48,10 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, memory_root, 70, 18)
     try:
         picker.wait("minified.txt")
-        picker.send(b"\x1bORx", "PARTIAL")
+        picker.send(b" cx", "PARTIAL")
         picker.wait("16 MiB")
-        picker.wait("F12 Help")
-        picker.send(b"\x1b[24~", "Keyboard help")
+        picker.wait("Space Shortcuts")
+        picker.send(b" ?", "Keyboard help")
         picker.send(b"\x1b[F", "filters")
         picker.send(b"\x03")  # Ctrl-C also exits directly from help.
         assert picker.finish() == b""
@@ -63,11 +63,11 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, root, 70, 18)
     try:
         picker.wait("source.rs")
-        picker.send(b"\x1bORlimit", "PARTIAL")  # Contents, row retention limit
-        picker.wait("F12 Help")
+        picker.send(b" climit", "PARTIAL")  # Contents, row retention limit
+        picker.wait("Space Shortcuts")
         picker.send(b"\x19", "payload sent")
         picker.wait("PARTIAL")
-        picker.wait("F12 Help")
+        picker.wait("Space Shortcuts")
         picker.send(b"\x03")
         assert picker.finish() == b""
     finally:
@@ -82,10 +82,10 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     os.chmod(locked, 0)
     picker = Picker(binary, error_root, 70, 18)
     try:
-        picker.wait("Workbench")
-        picker.send(b"\x1bORneedle", "1 errors")
-        picker.wait("F12 Help")
-        picker.send(b"\x1b[24~", "Keyboard help")
+        picker.wait("dirpick")
+        picker.send(b" cneedle", "1 errors")
+        picker.wait("Space Shortcuts")
+        picker.send(b" ?", "Keyboard help")
         picker.send(b"\x1b[F", "(os error 13)")  # End: full feedback across wrapped lines
         picker.send(b"\x1b", "Keyboard help", absent=True)
         picker.send(b"\x03")
@@ -154,15 +154,15 @@ input()
             picker.send(b"\x19", "payload sent")
             payloads = re.findall(rb"\x1b\]52;c;([^\x07]*)\x07", picker.output)
             assert base64.b64decode(payloads[-1]) == os.fsencode(selected)
-            picker.send(b"\x1b[18~", "[CWD]")  # F7, shared fields preserved
+            picker.send(b" s", "[CWD]")  # Space s, shared fields preserved
             picker.wait("Query needle")
             picker.wait("Include \\.rs$")
             picker.send(b"\x1b[1;3D", "[Project]")  # Back restores preset/search
-            picker.send(b"\x1bOR", "Workbench │ Contents")
+            picker.send(b" c", "[c Contents]")
             picker.wait("Results · 2")
-            picker.send(b"\x1bOS", "Regex:on")  # F4
+            picker.send(b" r", "Regex:on")  # Space r
             if columns < 100:
-                picker.send(b"\x1b[21~", "needle 251")
+                picker.send(b" p", "needle 251")
                 preview_pane = True
             else:
                 picker.wait("needle 251")
@@ -178,7 +178,7 @@ input()
                 picker.wait("Include \\.rs$")
                 picker.wait("Ignored:off")
                 if width < 100 and not preview_pane:
-                    picker.send(b"\x1b[21~", f"context {scroll_first}")
+                    picker.send(b" p", f"context {scroll_first}")
                     preview_pane = True
                 picker.wait(f"context {scroll_first}")
             picker.send(b"\r", "journey editor owns terminal")
@@ -196,8 +196,8 @@ input()
             picker.send(b"\x1b[1;3D", "Query needle")
             picker.wait(f"context {scroll_first}")
             picker.send(b"\x06", "> Query")
-            picker.send(b"\x1b[19~\x1b[20~", "Hidden:on F9 Ignored:on")
-            picker.send(b"\x1bOQ", "Workbench │ Directories")
+            picker.send(b" h i", "Hidden:on  i Ignored:on")
+            picker.send(b" d", "[d Directories]")
             picker.send(b"\t\x15", "> Include")
             picker.wait("Children 1") if columns >= 100 or preview_pane else None
             children_page = f"Children {rows - 13}"
@@ -205,10 +205,10 @@ input()
             picker.send(b"\r", "[Custom]")
             picker.wait("Query needle", absent=True)
             # Deliberately change shared state inside the browsed scope.
-            picker.send(b"\x1bOPjunk\x1b[19~\x1bOS", "0 files")
-            picker.send(b"\x1b[1;3D", "Workbench │ Directories")
+            picker.send(b" fjunk h r", "0 files")
+            picker.send(b"\x1b[1;3D", "[d Directories]")
             picker.wait("Query needle")
-            picker.wait("Hidden:on F9 Ignored:on")
+            picker.wait("Hidden:on  i Ignored:on")
             picker.wait(children_page)
             picker.send(b"\x19", "payload sent")
             payloads = re.findall(rb"\x1b\]52;c;([^\x07]*)\x07", picker.output)
@@ -224,8 +224,8 @@ input()
         # Cancellation after superseding several searches never emits a cd record.
         picker = Picker(binary, launch, columns, rows, ["--json"])
         try:
-            picker.wait("Workbench")
-            picker.send(b"needle\x1bOR\x15context\x1bOQ")
+            picker.wait("dirpick")
+            picker.send(b"needle c\x15context d")
             picker.send(b"\x1b" if columns == 80 else b"\x03")
             assert picker.finish() == b""
         finally:

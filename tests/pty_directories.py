@@ -30,10 +30,10 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
         picker = Picker(command, root, columns, rows, arguments, environment)
         wait_for, send = picker.wait, picker.send
         try:
-            wait_for("Workbench")
-            send(b"\x1bOQ", "Workbench │ Directories")  # F2
+            wait_for("dirpick")
+            send(b" d", "[d Directories]")  # Space d
             if columns < 100:
-                send(b"\x1b[21~", "visible-child.txt")  # F10 preview
+                send(b" p", "visible-child.txt")  # Space p preview
             wait_for("nested-child/")
             wait_for("visible-child.txt")
             send(b"destination", "Query destination")
@@ -42,15 +42,15 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
             send(b"\r", "[Custom]")
             wait_for("Query destination", absent=True)
             if columns < 100:
-                send(b"\x1b[21~", "nested-child")  # Results identify the child even with a long scope title.
+                send(b" p", "nested-child")  # Results identify the child even with a long scope title.
             wait_for("nested-child")
             send(b"\x1b[1;3D", "Query destination")  # Alt-Left
             if columns < 100:
-                send(b"\x1b[21~", "nested-child/")
+                send(b" p", "nested-child/")
             wait_for("nested-child/")
             if not integration:
                 send(b"\x07", "--print-nu-wrapper")
-                wait_for("Workbench │ Directories")
+                wait_for("[d Directories]")
             if cancel:
                 picker.send(b"\x03")
             else:

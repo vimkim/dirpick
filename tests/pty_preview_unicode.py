@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-unicode-preview-") as root:
     picker = Picker(binary, root, 70, 18)
     try:
         picker.wait("unicode.txt")
-        picker.send(b"\x1b[21~", "Lines 1–2/2")
+        picker.send(b" p", "Lines 1–2/2")
         # Ten composed families use 20 cells, leaving ample room for TAIL
         # within the 61 source cells at 70×18. Inspect the terminal bytes so
         # this assertion does not depend on Python's Unicode width database.
@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-unicode-preview-") as root:
         assert family * 10 + "TAIL" in emitted, emitted
         assert "éX\\tcontrol\\u{1b}" in emitted, emitted
         start = len(picker.output)
-        picker.send("\x1bOR👩", "1 matching lines")
+        picker.send(" c👩", "1 matching lines")
         picker.wait("Lines 1–2/2")
         highlighted = picker.output[start:]
         assert b"48;2;249;226;175" in highlighted, highlighted

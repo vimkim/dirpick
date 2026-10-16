@@ -38,12 +38,12 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
             assert clipboards, "No clipboard payload reached the controlling terminal"
             assert base64.b64decode(clipboards[-1]) == os.fsencode(selected_path)
             wait_for(b"Query needle")
-            os.write(master, b"\x1b[24~")  # F12 help
+            os.write(master, b" ?")  # Space ? help
             wait_for(b"Keyboard help")
             os.write(master, b"\x1b")  # Close help
             wait_for(b"Keyboard help", absent=True)
             if columns < 100:
-                os.write(master, b"\x1b[21~")  # F10 preview pane
+                os.write(master, b" p")  # Space p preview pane
                 wait_for(b"real source preview")
             os.write(master, b"\x1b[6~")  # PageDown, selection/query stay intact
             wait_for(f"preview line {rows - 13}".encode())

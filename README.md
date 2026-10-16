@@ -25,15 +25,15 @@ never prevents traversal into a directory that could have matching descendants.
 An invalid pattern marks its field, explains the error, and clears stale results
 until you fix the pattern. Validation also applies to empty queries and directories.
 
-F1 selects Files and F2 selects Directories. Both use the same fuzzy path queries,
-filters, Hidden, and Ignored settings. Directory previews list immediate children
-using the active search scope's relative-path filters and visibility rules. Enter
+`Space f` selects Files and `Space d` selects Directories. Both use the same fuzzy
+path queries, filters, Hidden, and Ignored settings. Directory previews list
+immediate children using the active search scope's relative-path filters and visibility rules. Enter
 on a directory browses into it and clears only Query. Alt-Left restores the prior
 mode, scope, settings, selection, and preview position when available.
 
-F3 selects Contents mode: queries match literal text on individual lines by
-default. F4 toggles Regex. Queries use smart case in both settings. Filters keep
-their independent regex and case rules. An empty content query shows guidance
+`Space c` selects Contents mode: queries match literal text on individual lines by
+default. `Space r` toggles Regex. Queries use smart case in both settings. Filters
+keep their independent regex and case rules. An empty content query shows guidance
 without scanning. Dirpick groups matching lines by file with 1-based line numbers.
 Source previews show every matching span and begin near the selected line.
 Mode changes keep Query, Include, Exclude, scope, Regex, Hidden, and Ignored.
@@ -52,35 +52,49 @@ Directory browsing and Nushell integration follow the
 
 ## Keys
 
+Press **Space** to open the shortcut guide, then a listed key to act.
+The header always shows Files, Directories, and Contents with their shortcut
+letters; the active mode has a colored badge and brackets. Green marks Files,
+blue Directories, and peach Contents. Focused fields have a contrasting
+background, search and result borders follow the mode color, and enabled
+traversal toggles light up.
+
+Typing still edits the focused field directly. Press **Space Space** to insert
+a literal space in a query, filter, or scope path. Esc cancels the guide without
+changing the field; an unrecognized key leaves the guide open.
+
 | Key | Effect |
 | --- | --- |
-| F1 / F2 / F3 | Select Files / Directories / Contents |
-| F4 | Toggle content Regex and retain it when changing modes |
+| Space | Open the shortcut guide |
+| Space Space | Insert a literal space in the focused field |
+| Space q | Quit |
+| Space f / Space d / Space c | Select Files / Directories / Contents |
+| Space r | Toggle content Regex and retain it when changing modes |
 | Enter | Open the selected file or content line in the configured editor |
 | Enter on a directory | Browse inside Dirpick and clear only Query |
 | Ctrl-G | cd & exit for a directory through the Nushell wrapper |
 | Up / Down | Select a result |
 | PageUp / PageDown | Scroll the preview independently |
 | Ctrl-Y | Send the exact selected absolute path through OSC 52 and keep searching |
-| F7 | Switch Project / launch CWD, retaining the query |
-| F8 | Reveal / hide dotfiles and dot directories |
-| F9 | Bypass / respect ignore rules |
+| Space s | Switch Project / launch CWD, retaining the query |
+| Space h | Reveal / hide dotfiles and dot directories |
+| Space i | Bypass / respect ignore rules |
 | Tab / Shift-Tab | Cycle Query, Include, Exclude, and Scope |
 | Ctrl-F / Ctrl-L | Focus Query / Scope |
 | Ctrl-U | Clear the focused field |
 | Left / Right / Home / End | Move the field cursor |
 | Enter in Scope | Apply a directory and clear only Query |
 | Alt-Left | Restore the previous scope, fields, toggles, selection, and preview position |
-| F10 | Switch Results / Preview below 100 columns |
-| F12 | Show keyboard help |
-| Esc | Close help, or quit |
+| Space p | Switch Results / Preview below 100 columns |
+| Space ? | Show keyboard help |
+| Esc | Close the shortcut guide or help, or quit |
 | Ctrl-C | Quit |
 
 Relative scope paths resolve against the active scope. Invalid paths retain the
 active search and show an error. CWD always means the original launch directory.
 Scope changes retain Include, Exclude, Hidden, and Ignored settings.
 At 100 columns or more, Results and Preview appear beside each other. At 70–99
-columns, F10 switches between them. Settings remain visible in both layouts.
+columns, `Space p` switches between them. Settings remain visible in both layouts.
 Resizing keeps the active search, selected result, and manual preview position.
 A new content selection centers its matching line within the available preview
 rows. Its context adjusts on resize until PageUp/PageDown begins independent
@@ -90,7 +104,7 @@ source line or directory child remains reachable at 70×18. A shorter byte-limit
 window advances only past the rows it displayed. The preview footer shows the
 displayed range.
 The interface supports terminals of at least 70 columns and 18 rows. Below
-that size, F12 opens basic help and Esc or Ctrl-C still exits.
+that size, `Space ?` opens basic help and Esc or Ctrl-C still exits.
 Set `NO_COLOR` to use terminal default colors with selection markers and attributes.
 Field editing and cursor positioning use Unicode terminal display widths.
 Source clipping keeps complete graphemes, including joined emoji, and measures
@@ -99,7 +113,7 @@ a match inside a composed grapheme highlights the complete glyph.
 
 The footer reserves separate rows for completion or limits, action feedback,
 and key guidance. `PARTIAL` appears first when a search reaches a limit.
-Long feedback shows `F12 details`. In help, PageUp/PageDown scroll and Home/End
+Long feedback shows `Space ? details`. In help, PageUp/PageDown scroll and Home/End
 show the first or last page, including complete error and action messages.
 Esc closes help first. Ctrl-C exits even while help is open.
 
@@ -170,9 +184,9 @@ yourself. Dirpick does not edit shell configuration. The binary embeds the wrapp
 so the wrapper remains available after temporary Cargo installation without the
 source checkout or a separate data installation.
 
-Within `dp`, F2 searches directories, Enter browses without changing the shell,
-and Ctrl-G changes the invoking Nu directory and exits. The wrapper uses ordinary
-`cd`, preserving Nu's normal directory behavior. It passes decoded paths as data.
+Within `dp`, `Space d` searches directories, Enter browses without changing the
+shell, and Ctrl-G changes the invoking Nu directory and exits. The wrapper uses
+ordinary `cd`, preserving Nu's normal directory behavior. It passes decoded paths as data.
 The appended separator preserves names ending in spaces, tabs, or newlines.
 Cancellation, plain quitting, copying, or failed picker execution never changes
 PWD. The wrapper rejects invalid JSON, unexpected keys/actions/types, relative

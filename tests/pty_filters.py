@@ -35,17 +35,17 @@ with tempfile.TemporaryDirectory(prefix="dirpick-filters-") as root:
             # Query -> Include -> Exclude -> Scope, then reverse the whole cycle.
             send(b"\t\t\t", "> Scope")
             send(b"\x1b[Z\x1b[Z\x1b[Z", "> Query")
-            send(b"\x1b[19~", "Hidden:on")  # F8
+            send(b" h", "Hidden:on")  # Space h
             wait_for(".secret.rs")
             wait_for("ignored.rs", absent=True)
-            send(b"\x1b[20~", "Ignored:on")  # F9
+            send(b" i", "Ignored:on")  # Space i
             wait_for("ignored.rs")
-            send(b"\x1b[19~", "Hidden:off")
+            send(b" h", "Hidden:off")
             wait_for(".secret.rs", absent=True)
             wait_for("ignored.rs")
             send(b"\t\tignored", "ignored.rs", absent=True)
-            send(b"\x1b[24~", "Keyboard help")
-            wait_for("F8 / F9")
+            send(b" ?", "Keyboard help")
+            wait_for("Space h / i")
             send(b"\x1b", "Keyboard help", absent=True)
             picker.send(b"\x03")
             assert picker.finish() == b""

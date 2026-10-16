@@ -59,11 +59,11 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
         try:
             wait_for("Results · 1")
             if mode not in ("files", "generic"):
-                send(b"\x1bOR", "Type a content query")
+                send(b" c", "Type a content query")
                 send(b"needle", "needle 251")
                 wait_for("needle 260")
                 if columns < 100:
-                    send(b"\x1b[21~", "needle 251")  # F10 preview
+                    send(b" p", "needle 251")  # Space p preview
                 # Matching rows are grouped beneath the file, then selected by line.
                 send(b"\x1b[B", "needle 260")
                 send(b"\x1b[6~", paged_context)
@@ -88,11 +88,13 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
                 wait_for("Editor failed")
                 assert not os.path.exists(record)
             else:
-                wait_for("Content locations require Vim/Neovim")
+                wait_for("Content locations require")
                 assert not os.path.exists(record)
             # Full action errors remain available even when their footer row clips.
-            send(b"\x1b[24~", "Keyboard help")
+            send(b" ?", "Keyboard help")
             send(b"\x1b[F", "retained")
+            if mode == "unsupported":
+                wait_for("Vim/Neovim")  # Full error is available beyond the clipped footer.
             os.write(master, b"\x1b")
             wait_for("Keyboard help", absent=True)
             if mode not in ("files", "generic"):

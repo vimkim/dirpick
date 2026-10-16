@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -114,6 +114,10 @@ struct Theme {
     accent: Style,
     selected: Style,
     error: Style,
+    files: Style,
+    directories: Style,
+    contents: Style,
+    surface: Style,
 }
 impl Theme {
     fn new() -> Self {
@@ -125,6 +129,10 @@ impl Theme {
                 accent: Style::default().add_modifier(Modifier::BOLD),
                 selected: Style::default().add_modifier(Modifier::REVERSED),
                 error: Style::default().add_modifier(Modifier::BOLD),
+                files: Style::default().add_modifier(Modifier::BOLD),
+                directories: Style::default().add_modifier(Modifier::BOLD),
+                contents: Style::default().add_modifier(Modifier::BOLD),
+                surface: Style::default(),
             }
         } else {
             let base = Style::default()
@@ -141,7 +149,67 @@ impl Theme {
                     .bg(Color::Rgb(49, 50, 68))
                     .fg(Color::Rgb(180, 190, 254)),
                 error: base.fg(Color::Rgb(243, 139, 168)),
+                files: base.fg(Color::Rgb(166, 227, 161)),
+                directories: base.fg(Color::Rgb(137, 180, 250)),
+                contents: base.fg(Color::Rgb(250, 179, 135)),
+                surface: base.bg(Color::Rgb(36, 38, 58)),
             }
+        }
+    }
+    fn mode(&self, mode: SearchMode) -> Style {
+        match mode {
+            SearchMode::Files => self.files,
+            SearchMode::Directories => self.directories,
+            SearchMode::Contents => self.contents,
+        }
+    }
+    fn badge(&self, style: Style) -> Style {
+        style.add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Shortcut {
+    Files,
+    Directories,
+    Contents,
+    Regex,
+    Scope,
+    Hidden,
+    Ignored,
+    Pane,
+    Help,
+    Quit,
+    Space,
+}
+impl Shortcut {
+    const ALL: [(char, Self); 11] = [
+        ('f', Self::Files),
+        ('d', Self::Directories),
+        ('c', Self::Contents),
+        ('r', Self::Regex),
+        ('h', Self::Hidden),
+        ('i', Self::Ignored),
+        ('s', Self::Scope),
+        ('p', Self::Pane),
+        ('?', Self::Help),
+        (' ', Self::Space),
+        ('q', Self::Quit),
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Files => "Files",
+            Self::Directories => "Directories",
+            Self::Contents => "Contents",
+            Self::Regex => "Content regex",
+            Self::Scope => "Project / CWD",
+            Self::Hidden => "Hidden paths",
+            Self::Ignored => "Ignored paths",
+            Self::Pane => "Results / Preview",
+            Self::Help => "Help & full feedback",
+            Self::Quit => "Quit",
+            Self::Space => "Insert a space",
         }
     }
 }
@@ -153,6 +221,7 @@ pub struct Workbench {
     exclude: Field,
     scope: Field,
     help: bool,
+    leader: bool,
     help_scroll: usize,
     help_max_scroll: usize,
     preview_pane: bool,
@@ -169,6 +238,7 @@ impl Workbench {
             exclude: Field::default(),
             scope: Field::default(),
             help: false,
+            leader: false,
             help_scroll: 0,
             help_max_scroll: 0,
             preview_pane: false,
@@ -230,7 +300,7 @@ impl Workbench {
         }
         if self.help {
             match key.code {
-                KeyCode::Esc | KeyCode::F(12) => self.help = false,
+                KeyCode::Esc => self.help = false,
                 KeyCode::PageDown | KeyCode::Down => {
                     self.help_scroll = (self.help_scroll + 10).min(self.help_max_scroll)
                 }
@@ -243,23 +313,49 @@ impl Workbench {
             }
             return false;
         }
+        if self.leader {
+            if key.code == KeyCode::Esc {
+                self.leader = false;
+            } else if let KeyCode::Char(character) = key.code
+                && !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                && let Some((_, shortcut)) = Shortcut::ALL.iter().find(|(key, _)| *key == character)
+            {
+                self.leader = false;
+                match shortcut {
+                    Shortcut::Files => session.command(Command::SetMode(SearchMode::Files)),
+                    Shortcut::Directories => {
+                        session.command(Command::SetMode(SearchMode::Directories))
+                    }
+                    Shortcut::Contents => session.command(Command::SetMode(SearchMode::Contents)),
+                    Shortcut::Regex => session.command(Command::ToggleRegex),
+                    Shortcut::Scope => {
+                        session.command(Command::ToggleScope);
+                        self.sync(session);
+                    }
+                    Shortcut::Hidden => session.command(Command::ToggleHidden),
+                    Shortcut::Ignored => session.command(Command::ToggleIgnored),
+                    Shortcut::Pane => self.preview_pane = !self.preview_pane,
+                    Shortcut::Help => {
+                        self.help = true;
+                        self.help_scroll = 0;
+                    }
+                    Shortcut::Quit => return true,
+                    Shortcut::Space => self.edit_field(session, key),
+                }
+            }
+            return false;
+        }
         match key.code {
             KeyCode::Esc => return true,
-            KeyCode::F(1) => session.command(Command::SetMode(SearchMode::Files)),
-            KeyCode::F(2) => session.command(Command::SetMode(SearchMode::Directories)),
-            KeyCode::F(12) => {
-                self.help = true;
-                self.help_scroll = 0;
+            KeyCode::Char(' ')
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                self.leader = true;
             }
-            KeyCode::F(3) => session.command(Command::SetMode(SearchMode::Contents)),
-            KeyCode::F(4) => session.command(Command::ToggleRegex),
-            KeyCode::F(10) => self.preview_pane = !self.preview_pane,
-            KeyCode::F(7) => {
-                session.command(Command::ToggleScope);
-                self.sync(session);
-            }
-            KeyCode::F(8) => session.command(Command::ToggleHidden),
-            KeyCode::F(9) => session.command(Command::ToggleIgnored),
             KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
                 session.command(Command::Back);
                 self.sync(session);
@@ -304,28 +400,25 @@ impl Workbench {
                 session.command(Command::ApplyScope(self.scope.text.clone().into()));
             }
             KeyCode::Enter => session.command(Command::OpenSelected),
-            _ => {
-                let field = match self.focus {
-                    Focus::Query => &mut self.query,
-                    Focus::Include => &mut self.include,
-                    Focus::Exclude => &mut self.exclude,
-                    Focus::Scope => &mut self.scope,
-                };
-                if field.edit(key) {
-                    match self.focus {
-                        Focus::Query => session.command(Command::SetQuery(self.query.text.clone())),
-                        Focus::Include => {
-                            session.command(Command::SetInclude(self.include.text.clone()))
-                        }
-                        Focus::Exclude => {
-                            session.command(Command::SetExclude(self.exclude.text.clone()))
-                        }
-                        Focus::Scope => {}
-                    }
-                }
-            }
+            _ => self.edit_field(session, key),
         }
         false
+    }
+    fn edit_field(&mut self, session: &mut SearchSession, key: KeyEvent) {
+        let field = match self.focus {
+            Focus::Query => &mut self.query,
+            Focus::Include => &mut self.include,
+            Focus::Exclude => &mut self.exclude,
+            Focus::Scope => &mut self.scope,
+        };
+        if field.edit(key) {
+            match self.focus {
+                Focus::Query => session.command(Command::SetQuery(self.query.text.clone())),
+                Focus::Include => session.command(Command::SetInclude(self.include.text.clone())),
+                Focus::Exclude => session.command(Command::SetExclude(self.exclude.text.clone())),
+                Focus::Scope => {}
+            }
+        }
     }
     pub fn draw(&mut self, frame: &mut Frame, session: &SearchSession) {
         let area = frame.area();
@@ -334,14 +427,17 @@ impl Workbench {
         if area.width < 70 || area.height < 18 {
             frame.render_widget(
                 Paragraph::new(if self.help {
-                    "Keyboard help · Ctrl-C quit\nF12 / Esc close help\nResize terminal to at least 70×18 for the workbench\nF1/F2/F3 Files/Directories/Contents · F4 Regex\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nCtrl-U clear · arrows/Home/End edit · Up/Down select\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview\nF7 Project/CWD · F8 Hidden · F9 Ignored · F10 pane"
+                    "Keyboard help · Ctrl-C quit\nEsc close help · Space opens shortcuts\nResize terminal to at least 70×18 for the workbench\nSpace f Files · Space d Directories · Space c Contents\nSpace r Regex · Space s Project/CWD · Space p Pane\nSpace h Hidden · Space i Ignored · Space Space insert space\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nCtrl-U clear · arrows/Home/End edit · Up/Down select\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview"
                 } else {
-                    "dirpick · Resize terminal to at least 70×18\nF12 Help · Esc / Ctrl-C quit"
+                    "dirpick · Resize terminal to at least 70×18\nSpace Shortcuts · Space ? Help · Esc / Ctrl-C quit"
                 })
                 .wrap(Wrap { trim: false })
                 .style(self.theme.accent),
                 area,
             );
+            if self.leader {
+                self.guide(frame, area, session);
+            }
             return;
         }
         let vertical = Layout::default()
@@ -353,10 +449,26 @@ impl Workbench {
                 Constraint::Length(3),
             ])
             .split(area);
+        let header =
+            Layout::horizontal([Constraint::Min(0), Constraint::Length(17)]).split(vertical[0]);
+        let mut modes = vec![Span::styled(" dirpick │ ", self.theme.accent)];
+        for (mode, label) in [
+            (SearchMode::Files, "f Files"),
+            (SearchMode::Directories, "d Directories"),
+            (SearchMode::Contents, "c Contents"),
+        ] {
+            let style = self.theme.mode(mode);
+            modes.push(if state.settings.mode == mode {
+                Span::styled(format!("[{label}]"), self.theme.badge(style))
+            } else {
+                Span::styled(format!(" {label} "), style)
+            });
+            modes.push(Span::raw(" "));
+        }
+        frame.render_widget(Paragraph::new(Line::from(modes)), header[0]);
         frame.render_widget(
-            Paragraph::new(format!(" dirpick │ Workbench │ {:?}", state.settings.mode))
-                .style(self.theme.accent),
-            vertical[0],
+            Paragraph::new(" Space Shortcuts ").style(self.theme.badge(self.theme.accent)),
+            header[1],
         );
         let controls = Layout::default()
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -366,22 +478,25 @@ impl Workbench {
         frame.render_widget(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title(" Search · regex filters ")
-                .border_style(self.theme.dim),
+                .border_style(if self.focus == Focus::Scope {
+                    self.theme.dim
+                } else {
+                    self.theme.mode(state.settings.mode)
+                }),
             controls[0],
         );
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(Span::styled(
                     match state.settings.mode {
-                        SearchMode::Contents if state.settings.regex => {
-                            "F3 Contents · F4 Regex:on · smart case"
-                        }
-                        SearchMode::Contents => "F3 Contents · F4 Regex:off · smart case",
-                        _ if state.settings.regex => "F4 Regex:on (Contents) · fuzzy",
-                        _ => "F4 Regex:off (Contents) · fuzzy",
+                        SearchMode::Contents if state.settings.regex => "Regex:on · smart case",
+                        SearchMode::Contents => "Regex:off · literal · smart case",
+                        _ if state.settings.regex => "fuzzy · Regex:on (Contents)",
+                        _ => "fuzzy · Regex:off (Contents)",
                     },
-                    self.theme.accent,
+                    self.theme.mode(state.settings.mode),
                 )),
                 Line::raw(""),
             ])
@@ -416,8 +531,13 @@ impl Workbench {
         frame.render_widget(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title(" Search scope ")
-                .border_style(self.theme.dim),
+                .border_style(if self.focus == Focus::Scope {
+                    self.theme.directories
+                } else {
+                    self.theme.dim
+                }),
             controls[1],
         );
         let scope_inner = controls[1].inner(ratatui::layout::Margin::new(1, 1));
@@ -442,17 +562,33 @@ impl Workbench {
         frame.render_widget(
             Paragraph::new(vec![
                 Line::from(Span::styled(
-                    format!("F7 {preset}{fallback}"),
-                    self.theme.accent,
+                    format!("s {preset}{fallback}"),
+                    self.theme.directories,
                 )),
-                Line::from(Span::styled(
-                    format!(
-                        "F8 Hidden:{} F9 Ignored:{}",
-                        if state.settings.hidden { "on" } else { "off" },
-                        if state.settings.ignored { "on" } else { "off" }
+                Line::from(vec![
+                    Span::styled(
+                        format!(
+                            "h Hidden:{}",
+                            if state.settings.hidden { "on" } else { "off" }
+                        ),
+                        if state.settings.hidden {
+                            self.theme.files
+                        } else {
+                            self.theme.dim
+                        },
                     ),
-                    self.theme.accent,
-                )),
+                    Span::styled(
+                        format!(
+                            "  i Ignored:{}",
+                            if state.settings.ignored { "on" } else { "off" }
+                        ),
+                        if state.settings.ignored {
+                            self.theme.contents
+                        } else {
+                            self.theme.dim
+                        },
+                    ),
+                ]),
                 Line::raw(format!(
                     "Launch CWD: {}",
                     display_text(&state.launch_cwd.to_string_lossy())
@@ -477,11 +613,11 @@ impl Workbench {
             || state.include_error.is_some()
             || state.exclude_error.is_some();
         let status = if state.query_error.is_some() {
-            "Invalid content regex · F12 details".into()
+            "Invalid content regex · Space ? details".into()
         } else if state.include_error.is_some() {
-            "Invalid include regex · F12 details".into()
+            "Invalid include regex · Space ? details".into()
         } else if state.exclude_error.is_some() {
-            "Invalid exclude regex · F12 details".into()
+            "Invalid exclude regex · Space ? details".into()
         } else if state.scope_loading {
             "Validating scope… current search retained".into()
         } else if state.scanning {
@@ -529,7 +665,7 @@ impl Workbench {
         };
         let mut detail = display_text(detail);
         if detail.width() > usize::from(vertical[3].width) {
-            let suffix = "… F12 details";
+            let suffix = "… Space ? details";
             let available = usize::from(vertical[3].width).saturating_sub(suffix.width());
             let mut cells = 0;
             detail = detail
@@ -549,18 +685,23 @@ impl Workbench {
                 if invalid_filters || state.errors > 0 || state.entry_limit || state.result_limit {
                     self.theme.error
                 } else {
-                    self.theme.accent
+                    self.theme.files
                 },
             )),
             Line::raw(detail),
-            Line::raw(format!(
-                "↑↓ Select  Enter {}  Tab Fields  F10 Pane  F12 Help  Esc Quit",
-                if state.settings.mode == SearchMode::Directories {
-                    "Browse"
+            Line::from(vec![
+                Span::styled(" Space Shortcuts ", self.theme.badge(self.theme.accent)),
+                Span::styled("  ↑↓ ", self.theme.directories),
+                Span::raw("Select  "),
+                Span::styled("Enter ", self.theme.files),
+                Span::raw(if state.settings.mode == SearchMode::Directories {
+                    "Browse  "
                 } else {
-                    "Editor"
-                }
-            )),
+                    "Editor  "
+                }),
+                Span::styled("Tab ", self.theme.contents),
+                Span::raw("Fields  Esc Quit"),
+            ]),
         ];
         frame.render_widget(Paragraph::new(lines).style(self.theme.dim), vertical[3]);
         if self.help {
@@ -587,7 +728,7 @@ impl Workbench {
                 }
             }
             let help = format!(
-                "F12 / Esc close help · Ctrl-C quit · PgUp/Dn scroll\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear; Left/Right/Home/End: edit\nUp/Down select · PageUp/PageDown preview\nCtrl-Y: exact absolute path via OSC 52\nF7: Project / immutable launch CWD\nF8 / F9: reveal Hidden / Ignored independently\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nF10: Results/Preview below 100 columns\nF1/F2/F3: Files/Directories/Contents · F4 Regex\nEnter browse/editor · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
+                "Esc close help · Ctrl-C quit · PgUp/Dn scroll\nSpace: shortcut guide · Space Space: insert a space\nSpace f / d / c: Files / Directories / Contents\nSpace r: toggle content Regex\nSpace s: Project / immutable launch CWD\nSpace h / i: reveal Hidden / Ignored independently\nSpace p: Results/Preview below 100 columns\nSpace ?: help & full feedback · Space q: quit\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: focus Query / Scope\nCtrl-U: clear; Left/Right/Home/End: edit\nUp/Down select · PageUp/PageDown preview\nCtrl-Y: exact absolute path via OSC 52\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nEnter browse/editor · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
                 feedback.join("\n")
             );
             let mut lines = Vec::new();
@@ -622,10 +763,107 @@ impl Workbench {
                     .block(
                         Block::default()
                             .borders(Borders::ALL)
+                            .border_type(BorderType::Rounded)
+                            .border_style(self.theme.accent)
                             .title(" Keyboard help · PgUp/Dn details "),
                     )
                     .style(self.theme.base),
                 popup,
+            );
+        }
+        if self.leader {
+            self.guide(frame, area, session);
+        }
+    }
+    fn guide(&self, frame: &mut Frame, area: Rect, session: &SearchSession) {
+        let width = area.width.saturating_sub(2).min(78);
+        let columns = if width >= 56 { 2 } else { 1 };
+        let rows = Shortcut::ALL.len().div_ceil(columns);
+        let height = (rows as u16 + 4).min(area.height);
+        let popup = Rect::new(
+            area.right().saturating_sub(width + 1).max(area.x),
+            area.bottom().saturating_sub(height + 1).max(area.y),
+            width,
+            height,
+        );
+        frame.render_widget(Clear, popup);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(self.theme.accent)
+            .style(self.theme.surface)
+            .title(" Space → Shortcuts ")
+            .title_bottom(" Esc cancel · Space insert space ");
+        let inner = block.inner(popup);
+        frame.render_widget(block, popup);
+        let cells =
+            Layout::horizontal(vec![Constraint::Ratio(1, columns as u32); columns]).split(inner);
+        let settings = &session.state().settings;
+        for (column, cell) in cells.iter().enumerate() {
+            frame.render_widget(
+                Paragraph::new(if columns == 1 {
+                    " Press a key to choose"
+                } else if column == 0 {
+                    " Search & filters"
+                } else {
+                    " Scope & session"
+                })
+                .style(self.theme.accent),
+                Rect {
+                    height: cell.height.min(1),
+                    ..*cell
+                },
+            );
+            let lines: Vec<_> = Shortcut::ALL
+                .iter()
+                .skip(column * rows)
+                .take(rows)
+                .map(|(key, shortcut)| {
+                    let (style, enabled) = match shortcut {
+                        Shortcut::Files => (self.theme.files, settings.mode == SearchMode::Files),
+                        Shortcut::Directories => (
+                            self.theme.directories,
+                            settings.mode == SearchMode::Directories,
+                        ),
+                        Shortcut::Contents => {
+                            (self.theme.contents, settings.mode == SearchMode::Contents)
+                        }
+                        Shortcut::Regex => (self.theme.contents, settings.regex),
+                        Shortcut::Hidden => (self.theme.files, settings.hidden),
+                        Shortcut::Ignored => (self.theme.contents, settings.ignored),
+                        _ => (self.theme.accent, false),
+                    };
+                    let key = if *key == ' ' {
+                        "Space".into()
+                    } else {
+                        format!("  {key}  ")
+                    };
+                    let state = match shortcut {
+                        Shortcut::Files | Shortcut::Directories | Shortcut::Contents if enabled => {
+                            " [active]"
+                        }
+                        Shortcut::Regex | Shortcut::Hidden | Shortcut::Ignored => {
+                            if enabled {
+                                " [on]"
+                            } else {
+                                " [off]"
+                            }
+                        }
+                        _ => "",
+                    };
+                    Line::from(vec![
+                        Span::styled(key, self.theme.badge(style)),
+                        Span::styled(format!(" {}{state}", shortcut.label()), style),
+                    ])
+                })
+                .collect();
+            frame.render_widget(
+                Paragraph::new(lines).style(self.theme.surface),
+                Rect {
+                    y: cell.y.saturating_add(2),
+                    height: cell.height.saturating_sub(2),
+                    ..*cell
+                },
             );
         }
     }
@@ -660,7 +898,7 @@ impl Workbench {
             }),
             area,
         );
-        if focused && !self.help && available > 0 {
+        if focused && !self.help && !self.leader && available > 0 {
             frame.set_cursor_position((area.x + prefix.width() as u16 + cursor as u16, area.y));
         }
     }
@@ -704,12 +942,13 @@ impl Workbench {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
                     .title(format!(
                         " Results · {} {} ",
                         state.results.len(),
                         if state.scanning { "· scanning" } else { "" }
                     ))
-                    .border_style(self.theme.dim),
+                    .border_style(self.theme.mode(state.settings.mode)),
             )
             .style(self.theme.base)
             .highlight_style(self.theme.selected)
@@ -749,8 +988,9 @@ impl Workbench {
         );
         let block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(title)
-            .border_style(self.theme.dim);
+            .border_style(self.theme.directories);
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let lines = if state.preview.loading {

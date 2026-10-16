@@ -15,7 +15,7 @@ fn run() -> io::Result<()> {
     match std::env::args_os().nth(1) {
         Some(argument) if argument == "--help" || argument == "-h" => {
             println!(
-                "dirpick — terminal path search and preview\n\nUsage: dirpick [--json]\n\nF1 Files; F2 Directories; F3 Contents; F4 Regex.\nEnter browses directories or opens a file/match in VISUAL/EDITOR; Alt-Left goes Back.\nLaunch in a directory; Project discovers the enclosing Git working tree.\nF7 switches to launch CWD. F12 shows keyboard help and full status details.\nEsc or Ctrl-C quits. Ctrl-G cd & exit requires the Nushell wrapper and --json.\n--print-nu-wrapper prints the packaged Nu module; see README for setup.\n--json reserves stdout for a cd action; quit/cancel produces no output.\n--third-party-notices prints bundled dependency and syntax license notices."
+                "dirpick — terminal path search and preview\n\nUsage: dirpick [--json]\n\nSpace opens the shortcut guide: f Files; d Directories; c Contents; r Regex.\nSpace Space inserts a literal space in the focused field.\nEnter browses directories or opens a file/match in VISUAL/EDITOR; Alt-Left goes Back.\nLaunch in a directory; Project discovers the enclosing Git working tree.\nSpace s switches to launch CWD. Space ? shows keyboard help and full status details.\nEsc or Ctrl-C quits. Ctrl-G cd & exit requires the Nushell wrapper and --json.\n--print-nu-wrapper prints the packaged Nu module; see README for setup.\n--json reserves stdout for a cd action; quit/cancel produces no output.\n--third-party-notices prints bundled dependency and syntax license notices."
             );
             return Ok(());
         }
