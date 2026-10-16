@@ -54,6 +54,13 @@ Narrow-terminal behavior and the remaining keybindings are still open.
 The user found the browser mockups did not look like a TUI. Evaluate the layout
 in the running terminal prototype when choosing the design.
 
+### Appearance
+
+Use Catppuccin Mocha as the default theme. The native prototype applies the
+official palette to backgrounds, labels, borders, focus, selections, source
+syntax, match highlights, and errors. Terminal monochrome preferences remain
+available through the existing `NO_COLOR` behavior.
+
 ### Startup
 
 Start in the launching directory with Files mode selected and the query focused.
@@ -91,7 +98,7 @@ and action contracts. The browser study remains at commit `ed6eb3a` as
 historical evidence; the user rejected its appearance as insufficiently TUI-like.
 
 The current study is a native Rust TUI on local branch `prototype/search-layouts`,
-commit `34bca7b`, with entry point `prototypes/terminal/Cargo.toml`.
+commit `ad47a4f`, with entry point `prototypes/terminal/Cargo.toml`.
 Its checkout is `/home/vimkim/gh/dirpick-prototype`. Run instructions and keys
 are in `prototypes/README.md` on that branch. Ratatui and Crossterm are prototype
 tools; the production framework choice remains open.
