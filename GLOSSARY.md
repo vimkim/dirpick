@@ -26,3 +26,18 @@ The text used to match candidates in the selected search mode.
 
 **Preview**:
 The inspection view associated with the selected search result.
+
+**Include filter**:
+A constraint on eligible paths, evaluated relative to the search scope in
+every search mode.
+
+**Exclude filter**:
+A constraint that removes paths from consideration even when the include
+filter matches them.
+
+**Browse**:
+Moving into a directory as the active search scope while remaining in Dirpick.
+_Avoid_: cd
+
+**cd & exit**:
+The action that selects a directory for the invoking shell and exits Dirpick.

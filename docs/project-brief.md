@@ -56,18 +56,41 @@ Narrow-terminal behavior and the remaining keybindings are still open.
 
 Start in the launching directory with Files mode selected and the query focused.
 Search recursively beneath that directory. Enumeration, limits, ranking, and
-query matching details remain open.
+empty-query behavior remain open.
+
+### Query matching
+
+Files and Directories use fuzzy path matching. Contents uses literal matching
+by default, with a visible Regex toggle. Matching is case-insensitive unless
+the query contains uppercase.
+
+### Include and exclude filters
+
+Include and exclude fields contain regexes matched against paths relative to
+the search scope, across all three modes. Exclusion wins when both match.
+For example, `\.rs$` includes Rust files and `(^|/)tests(/|$)` excludes a
+tests directory and its descendants. These filters operate independently of
+the Contents query's Regex toggle.
+
+### Actions and restoration
+
+- Enter on a directory changes the search scope to it and clears the query.
+  Back restores the previous search.
+- Enter on a file or content result opens the editor. Closing the editor
+  restores the search and selection. Content results open at the matching line.
+- A separate `cd & exit` action changes the invoking shell's directory through
+  shell integration.
+- Copy keeps Dirpick open.
 
 ## Decisions still open
 
 - The order of complete workflows within the agreed release.
 - Narrow-terminal layout and remaining focus/selection keybindings.
-- Query matching, ranking, and empty-query behavior in each mode.
-- Changes to search scope during navigation and state preserved across mode changes.
-- Filename filters: basename or relative path, regex or glob, and applicable modes.
+- Ranking and empty-query behavior in each mode.
+- State preserved across mode changes and manual scope edits.
 - Hidden entries, ignored entries, symlinks, and traversal boundaries.
 - Clipboard destination and formats; supported shells and the directory-return protocol.
-- Editor launch and restoration of the finder after the editor closes.
+- Editor command selection and terminal handoff details.
 - Search cancellation, large-directory behavior, and result limits.
 - Terminal framework, search backend, highlighting engine, and packaging.
 
