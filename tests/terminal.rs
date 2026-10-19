@@ -40,3 +40,14 @@ fn shell_editing_shortcuts_update_fields_and_search_results() {
         .expect("python3 is required for the Linux PTY field editing check");
     assert!(status.success());
 }
+
+#[test]
+fn navigation_shortcuts_select_browse_and_restore_without_alt() {
+    let status = std::process::Command::new("python3")
+        .arg("-B")
+        .arg("tests/pty_navigation.py")
+        .arg(env!("CARGO_BIN_EXE_dirpick"))
+        .status()
+        .expect("python3 is required for the Linux PTY navigation check");
+    assert!(status.success());
+}

@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-shortcuts-") as root:
             for label in ("Files", "Directories", "Contents", "Content regex",
                           "Project / CWD", "Hidden paths", "Ignored paths",
                           "Results / Preview", "Help & full feedback",
+                          "Parent directory", "Previous scope & search",
                           "Quit", "Edit Query", "Esc cancel"):
                 picker.wait(label)
             picker.send("x", "Space → Shortcuts")  # Unknown keys cannot edit fields.

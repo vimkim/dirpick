@@ -29,6 +29,80 @@ fn paths(session: &SearchSession) -> Vec<&str> {
 }
 
 #[test]
+fn parent_browses_the_active_scope_and_history_restores_the_full_search() {
+    let root = tempdir().unwrap();
+    let child = root.path().join("child");
+    fs::create_dir(&child).unwrap();
+    for index in 0..3 {
+        fs::write(
+            child.join(format!("needle-{index}.txt")),
+            "needle\n".repeat(60),
+        )
+        .unwrap();
+        fs::create_dir(child.join(format!("needle-{index}"))).unwrap();
+    }
+    let mut session = SearchSession::open(root.path()).unwrap();
+    session.command(Command::ApplyScope(child.clone()));
+    settled(&mut session);
+    for mode in [
+        SearchMode::Files,
+        SearchMode::Directories,
+        SearchMode::Contents,
+    ] {
+        session.command(Command::SetMode(mode));
+        session.command(Command::SetQuery("needle".into()));
+        session.command(Command::SetInclude("needle".into()));
+        session.command(Command::SetExclude("blocked".into()));
+        session.command(Command::ToggleRegex);
+        session.command(Command::ToggleHidden);
+        session.command(Command::ToggleIgnored);
+        settled(&mut session);
+        session.command(Command::Select(1));
+        session.command(Command::ScrollPreview(20));
+        settled(&mut session);
+        let before = session.state().clone();
+        session.command(Command::Parent);
+        settled(&mut session);
+        let mut expected = before.settings.clone();
+        expected.scope = root.path().to_path_buf();
+        expected.query.clear();
+        assert_eq!(session.state().settings, expected);
+        assert_eq!(session.state().launch_cwd, root.path());
+        session.command(Command::Back);
+        settled(&mut session);
+        assert_eq!(session.state().settings, before.settings);
+        assert_eq!(session.state().preset, before.preset);
+        assert_eq!(session.state().selected(), before.selected());
+        assert_eq!(session.state().preview, before.preview);
+    }
+}
+
+#[test]
+fn parent_at_root_keeps_the_search_and_does_not_add_history() {
+    use dirpick::session::{Limits, Options};
+    let mut session = SearchSession::with_options(
+        "/",
+        Options {
+            git_program: None,
+            limits: Limits {
+                entries: 1,
+                results: 1,
+            },
+            ..Options::default()
+        },
+    )
+    .unwrap();
+    let before = session.state().clone();
+    session.command(Command::Parent);
+    assert_eq!(session.state().message, "Already at root");
+    assert_eq!(session.state().settings, before.settings);
+    assert_eq!(session.state().generation, before.generation);
+    assert!(!session.state().scope_loading);
+    session.command(Command::Back);
+    assert_eq!(session.state().message, "No earlier scope");
+}
+
+#[test]
 fn directories_share_fuzzy_filters_and_independent_traversal_settings() {
     let root = tempdir().unwrap();
     for name in [

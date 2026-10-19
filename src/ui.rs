@@ -47,9 +47,6 @@ impl Field {
     fn edit(&mut self, key: KeyEvent) -> bool {
         let request = match (key.code, key.modifiers) {
             (KeyCode::Char('w'), KeyModifiers::CONTROL) => return self.delete_previous_word(),
-            (KeyCode::Char('b'), KeyModifiers::ALT) => Some(InputRequest::GoToPrevWord),
-            (KeyCode::Char('f'), KeyModifiers::ALT) => Some(InputRequest::GoToNextWord),
-            (KeyCode::Char('d'), KeyModifiers::ALT) => Some(InputRequest::DeleteNextWord),
             (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(InputRequest::DeleteNextChar),
             _ => to_input_request(&Event::Key(key)),
         };
@@ -167,6 +164,8 @@ enum Shortcut {
     Contents,
     Regex,
     Scope,
+    Parent,
+    Back,
     Hidden,
     Ignored,
     Pane,
@@ -175,7 +174,7 @@ enum Shortcut {
     Query,
 }
 impl Shortcut {
-    const ALL: [(char, Self); 11] = [
+    const ALL: [(char, Self); 13] = [
         ('f', Self::Files),
         ('d', Self::Directories),
         ('c', Self::Contents),
@@ -183,6 +182,8 @@ impl Shortcut {
         ('h', Self::Hidden),
         ('i', Self::Ignored),
         ('s', Self::Scope),
+        ('u', Self::Parent),
+        ('b', Self::Back),
         ('p', Self::Pane),
         ('?', Self::Help),
         ('/', Self::Query),
@@ -196,6 +197,8 @@ impl Shortcut {
             Self::Contents => "Contents",
             Self::Regex => "Content regex",
             Self::Scope => "Project / CWD",
+            Self::Parent => "Parent directory",
+            Self::Back => "Previous scope & search",
             Self::Hidden => "Hidden paths",
             Self::Ignored => "Ignored paths",
             Self::Pane => "Results / Preview",
@@ -289,6 +292,10 @@ impl Workbench {
     }
     /// Return true only when the user requests exit.
     pub fn key(&mut self, session: &mut SearchSession, key: KeyEvent) -> bool {
+        // Alt combinations belong to the user's terminal and window manager.
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            return false;
+        }
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return true;
         }
@@ -326,6 +333,11 @@ impl Workbench {
                     Shortcut::Regex => session.command(Command::ToggleRegex),
                     Shortcut::Scope => {
                         session.command(Command::ToggleScope);
+                        self.sync(session);
+                    }
+                    Shortcut::Parent => session.command(Command::Parent),
+                    Shortcut::Back => {
+                        session.command(Command::Back);
                         self.sync(session);
                     }
                     Shortcut::Hidden => session.command(Command::ToggleHidden),
@@ -368,13 +380,13 @@ impl Workbench {
                     }
                     'j' => session.command(Command::MoveSelection(1)),
                     'k' => session.command(Command::MoveSelection(-1)),
+                    'f' => session.command(Command::SetMode(SearchMode::Files)),
+                    'd' => session.command(Command::SetMode(SearchMode::Directories)),
+                    'c' => session.command(Command::SetMode(SearchMode::Contents)),
+                    'H' => session.command(Command::Parent),
                     'q' => return true,
                     _ => {}
                 }
-            }
-            KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
-                session.command(Command::Back);
-                self.sync(session);
             }
             KeyCode::Tab | KeyCode::BackTab => {
                 let reverse =
@@ -408,6 +420,12 @@ impl Workbench {
             }
             KeyCode::Char('g') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 session.command(Command::ChangeDirectory)
+            }
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                session.command(Command::MoveSelection(-1))
+            }
+            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                session.command(Command::MoveSelection(1))
             }
             KeyCode::Up => session.command(Command::MoveSelection(-1)),
             KeyCode::Down => session.command(Command::MoveSelection(1)),
@@ -450,7 +468,7 @@ impl Workbench {
         if area.width < 70 || area.height < 18 {
             frame.render_widget(
                 Paragraph::new(if self.help {
-                    "Keyboard help · Esc close · Ctrl-C quit\nNORMAL: i Insert · / edit Query · Space shortcuts\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down select · q / Ctrl-C quit\nSpace f Files · Space d Directories · Space c Contents\nSpace r Regex · Space s Project/CWD · Space p Pane\nSpace h Hidden · Space i Ignored · Space ? Help\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nInsert: Ctrl-W word · Ctrl-U clear · Ctrl-K to end\nCtrl-A/E start/end · Ctrl-B left · Ctrl-H/D delete\nAlt-B/F words · Alt-D delete word · Ctrl-arrows words\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview"
+                    "Keyboard help · Esc close · Ctrl-C quit\nNORMAL: i Insert · / edit Query · Space shortcuts\nINSERT: type normally, including spaces · Esc Normal\nCtrl-P/N or Up/Down select · Normal j/k also select · q / Ctrl-C quit\nNormal f/d/c or Space f/d/c: Files/Directories/Contents\nSpace r Regex · Space s Project/CWD · Space p Pane\nSpace h Hidden · Space i Ignored · Space ? Help\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nInsert: Ctrl-W word · Ctrl-U clear · Ctrl-K to end\nCtrl-A/E start/end · Ctrl-B left · Ctrl-H/D delete\nCtrl-arrows words · Ctrl-Delete delete word\nNormal H / Space u Parent · Space b Back\nEnter browse/editor · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview"
                 } else if self.input_mode == InputMode::Insert {
                     "dirpick · Resize terminal to at least 70×18\nINSERT · Type normally · Esc Normal · Ctrl-C quit"
                 } else {
@@ -695,8 +713,10 @@ impl Workbench {
             .or(state.scan_error.as_ref())
         {
             error
+        } else if self.input_mode == InputMode::Normal {
+            "H Parent · Space b Back · Ctrl-Y Copy · Ctrl-G cd & exit"
         } else {
-            "Ctrl-Y Copy · Ctrl-G cd & exit · Alt-Left Back · PgUp/Dn Preview"
+            "Ctrl-P/N Select · Esc H Parent · Esc Space b Back"
         };
         let mut detail = display_text(detail);
         if detail.width() > usize::from(vertical[3].width) {
@@ -785,7 +805,7 @@ impl Workbench {
                 }
             }
             let help = format!(
-                "Esc close help · Ctrl-C quit · PgUp/Dn scroll\nNORMAL: i edit focused field · / edit Query\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down: select · q: quit\nSpace: shortcut guide in Normal\nSpace f / d / c: Files / Directories / Contents\nSpace r: toggle content Regex\nSpace s: Project / immutable launch CWD\nSpace h / i: reveal Hidden / Ignored independently\nSpace p: Results/Preview below 100 columns\nSpace /: edit Query · Space ?: help · Space q: quit\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: edit Query / Scope in Insert\nInsert: Ctrl-W previous whitespace-delimited word\nCtrl-U clear field · Ctrl-K delete to end\nCtrl-A / Ctrl-E start / end · Ctrl-B left\nCtrl-H / Ctrl-D delete before / after cursor\nAlt-B / Alt-F or Ctrl-Left / Right: word movement\nAlt-Backspace: delete previous word\nAlt-D / Ctrl-Delete: delete to next word\nLeft/Right/Home/End: edit field cursor\nPageUp/PageDown preview · Ctrl-Y: exact path via OSC 52\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nEnter browse/editor in either mode · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
+                "Esc close help · Ctrl-C quit · PgUp/Dn scroll\nNORMAL: i edit focused field · / edit Query\nINSERT: type normally, including spaces · Esc Normal\nCtrl-P / Ctrl-N or Up/Down: select · Normal j/k also select · q: quit\nSpace: shortcut guide in Normal\nNormal f / d / c: Files / Directories / Contents\nSpace f / d / c: same search modes\nNormal H / Space u: parent directory\nSpace b: restore previous scope and search\nSpace r: toggle content Regex\nSpace s: Project / immutable launch CWD\nSpace h / i: reveal Hidden / Ignored independently\nSpace p: Results/Preview below 100 columns\nSpace /: edit Query · Space ?: help · Space q: quit\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: edit Query / Scope in Insert\nInsert: Ctrl-W previous whitespace-delimited word\nCtrl-U clear field · Ctrl-K delete to end\nCtrl-A / Ctrl-E start / end · Ctrl-B left\nCtrl-H / Ctrl-D delete before / after cursor\nCtrl-Left / Right: word movement\nCtrl-Delete: delete to next word\nLeft/Right/Home/End: edit field cursor\nPageUp/PageDown preview · Ctrl-Y: exact path via OSC 52\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Esc Space b: Back from Insert\nEnter browse/editor in either mode · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
                 feedback.join("\n")
             );
             let mut lines = Vec::new();
@@ -1194,6 +1214,122 @@ impl Workbench {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
+
+    fn settled(session: &mut SearchSession) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while session.state().scanning
+            || session.state().preview.loading
+            || session.state().scope_loading
+        {
+            assert!(Instant::now() < deadline, "session did not settle");
+            session.wait(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn ctrl_p_and_n_select_results_in_every_mode_and_field_without_editing() {
+        let root = tempfile::tempdir().unwrap();
+        for name in ["a-needle", "b-needle", "c-needle"] {
+            let directory = root.path().join(name);
+            std::fs::create_dir(&directory).unwrap();
+            std::fs::write(directory.join("needle.txt"), "needle\n").unwrap();
+        }
+        let mut session = SearchSession::open(root.path()).unwrap();
+        session.command(Command::SetQuery("needle".into()));
+        session.command(Command::SetInclude("needle".into()));
+        session.command(Command::SetExclude("blocked".into()));
+        for mode in [
+            SearchMode::Files,
+            SearchMode::Directories,
+            SearchMode::Contents,
+        ] {
+            session.command(Command::SetMode(mode));
+            settled(&mut session);
+            assert_eq!(session.state().results.len(), 3);
+            let mut ui = Workbench::new(&session);
+            for field in [
+                &mut ui.query,
+                &mut ui.include,
+                &mut ui.exclude,
+                &mut ui.scope,
+            ] {
+                field.input.handle(InputRequest::GoToStart);
+                field.input.handle(InputRequest::GoToNextChar);
+            }
+            for input_mode in [InputMode::Normal, InputMode::Insert] {
+                for focus in [Focus::Query, Focus::Include, Focus::Exclude, Focus::Scope] {
+                    ui.input_mode = input_mode;
+                    ui.focus = focus;
+                    session.command(Command::Select(0));
+                    let settings = session.state().settings.clone();
+                    let generation = session.state().generation;
+                    let fields = |ui: &Workbench| {
+                        [&ui.query, &ui.include, &ui.exclude, &ui.scope]
+                            .map(|field| (field.text().to_owned(), field.cursor_byte()))
+                    };
+                    let before = fields(&ui);
+                    for (key, expected) in [('p', 0), ('n', 1), ('n', 2), ('n', 2), ('p', 1)] {
+                        assert!(!ui.key(
+                            &mut session,
+                            KeyEvent::new(KeyCode::Char(key), KeyModifiers::CONTROL),
+                        ));
+                        ui.observe(&session);
+                        assert_eq!(session.state().selected_index, expected);
+                        assert_eq!(session.state().settings, settings);
+                        assert_eq!(session.state().generation, generation);
+                        assert_eq!(fields(&ui), before);
+                        assert!(ui.input_mode == input_mode && ui.focus == focus);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn alt_combinations_leave_fields_scope_and_overlays_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("child")).unwrap();
+        let mut session = SearchSession::open(root.path()).unwrap();
+        session.command(Command::SetQuery("one two".into()));
+        session.command(Command::ApplyScope("child".into()));
+        settled(&mut session);
+        let mut ui = Workbench::new(&session);
+        for input_mode in [InputMode::Normal, InputMode::Insert] {
+            ui.input_mode = input_mode;
+            ui.query.set("one two".into());
+            let settings = session.state().settings.clone();
+            let generation = session.state().generation;
+            for code in [
+                KeyCode::Char('b'),
+                KeyCode::Char('f'),
+                KeyCode::Char('d'),
+                KeyCode::Char('H'),
+                KeyCode::Char('c'),
+                KeyCode::Backspace,
+                KeyCode::Delete,
+                KeyCode::Left,
+                KeyCode::Up,
+            ] {
+                assert!(!ui.key(&mut session, KeyEvent::new(code, KeyModifiers::ALT)));
+                assert_eq!(ui.query.text(), "one two");
+                assert_eq!(ui.query.cursor_byte(), 7);
+                assert_eq!(session.state().settings, settings);
+                assert_eq!(session.state().generation, generation);
+                assert!(ui.input_mode == input_mode);
+            }
+        }
+        ui.leader = true;
+        ui.key(
+            &mut session,
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::ALT),
+        );
+        assert!(ui.leader && !session.state().scope_loading);
+        ui.leader = false;
+        ui.help = true;
+        ui.key(&mut session, KeyEvent::new(KeyCode::Esc, KeyModifiers::ALT));
+        assert!(ui.help);
+    }
 
     fn field_with_cursor(marked: &str) -> Field {
         let (before, after) = marked.split_once('|').unwrap();

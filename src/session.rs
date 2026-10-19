@@ -154,6 +154,7 @@ pub enum Command {
     PagePreview(isize),
     ToggleScope,
     ApplyScope(PathBuf),
+    Parent,
     Back,
     CopyPath,
 }
@@ -406,6 +407,13 @@ impl SearchSession {
                     (self.state.project_root.clone(), ScopePreset::Project)
                 };
                 self.change_scope(scope, preset, false);
+            }
+            Command::Parent => {
+                if let Some(parent) = self.state.settings.scope.parent() {
+                    self.command(Command::ApplyScope(parent.to_path_buf()));
+                } else {
+                    self.state.message = "Already at root".into();
+                }
             }
             Command::ApplyScope(path) => {
                 let path = if path.is_absolute() {
@@ -700,9 +708,9 @@ impl SearchSession {
             self.state.settings.query.clear();
         }
         self.state.message = if clear_query {
-            "Scope changed · query cleared · Alt-Left goes Back"
+            "Scope changed · query cleared · Space b goes Back"
         } else {
-            "Scope changed · query kept · Alt-Left goes Back"
+            "Scope changed · query kept · Space b goes Back"
         }
         .into();
         self.refresh();

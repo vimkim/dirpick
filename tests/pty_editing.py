@@ -38,32 +38,32 @@ with tempfile.TemporaryDirectory(prefix="dirpick-editing-") as root:
         edit(b"\x05\x08", "alpha omega")  # Ctrl-H / Backspace deletes back.
         edit(b"\x01\x0b", "")
 
-        # Alt letters and Ctrl arrows reach word operations on Linux terminals.
+        # Ctrl arrows and Ctrl-Delete reach word operations on Linux terminals.
         edit("one two three", "one two three")
-        edit(b"\x1bbX", "one two Xthree")
-        edit(b"\x01\x1bfY", "one Ytwo Xthree")
-        edit(b"\x01\x1bd", "Ytwo Xthree")
+        edit(b"\x1b[1;5DX", "one two Xthree")
+        edit(b"\x01\x1b[1;5CY", "one Ytwo Xthree")
+        edit(b"\x01\x1b[3;5~", "Ytwo Xthree")
         edit(b"\x01\x1b[1;5CZ", "Ytwo ZXthree")
         edit(b"\x05\x1b[1;5DQ", "Ytwo QZXthree")
         edit(b"\x01\x1b[3;5~", "QZXthree")  # Ctrl-Delete.
-        edit(b"\x05\x1bd", "QZXthree")
-        edit(b"\x01\x1bb\x17", "QZXthree")  # Start-of-field is a no-op.
+        edit(b"\x05\x1b[3;5~", "QZXthree")
+        edit(b"\x01\x1b[1;5D\x17", "QZXthree")  # Start-of-field is a no-op.
         edit(b"\x15one two", "one two")
-        edit(b"\x1b\x7f", "one ")  # Alt-Backspace.
+        edit(b"\x17", "one ")  # Ctrl-W.
 
         # Ctrl-W keeps punctuation within a word, skips trailing whitespace,
         # and leaves the text after the cursor intact.
         edit(b"\x15one path/to-file.rs   ", "one path/to-file.rs   ")
         edit(b"\x17", "one ")
         edit("two tail", "one two tail")
-        edit(b"\x1bb\x02\x17", "one  tail")
+        edit(b"\x1b[1;5D\x02\x17", "one  tail")
         edit("new", "one new tail")
         edit(b"\x15", "")
         edit(b"\x17\x17", "")
 
         # Library cursor indices are codepoints; drawing uses UTF-8 offsets.
         edit("한글 café 😀 tail", "한글 café 😀 tail")
-        edit(b"\x1bb\x02\x17", "한글 café  tail")
+        edit(b"\x1b[1;5D\x02\x17", "한글 café  tail")
         edit("새말", "한글 café 새말 tail")
         edit(b"\x15", "")
         edit("cafe\u0301", "cafe\u0301")
@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-editing-") as root:
         edit(b"\x06", "needle")
         picker.wait("Results · 1")
         picker.send(b"\x1b", " NORMAL ")
-        edit(b"\x17\x01\x05\x02\x0b\x1bb\x1bf\x1bd", "needle")
+        edit(b"\x17\x01\x05\x02\x0b\x1b[1;5D\x1b[1;5C\x1b[3;5~", "needle")
         edit(b"\x0c", "", "Scope")
         picker.wait(" INSERT ")
         edit(b"\x06", "needle")

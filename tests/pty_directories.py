@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
             if columns < 100:
                 send(b" p", "nested-child")  # Results identify the child even with a long scope title.
             wait_for("nested-child")
-            send(b"\x1b[1;3D", "Query destination")  # Alt-Left
+            send(b" b", "Query destination")  # Space b
             if columns < 100:
                 send(b" p", "nested-child/")
             wait_for("nested-child/")

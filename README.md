@@ -25,16 +25,19 @@ never prevents traversal into a directory that could have matching descendants.
 An invalid pattern marks its field, explains the error, and clears stale results
 until you fix the pattern. Validation also applies to empty queries and directories.
 
-In Normal mode (press `Esc`), `Space f` selects Files and `Space d` selects
-Directories. Both use the same fuzzy path queries, filters, Hidden, and Ignored
-settings. Directory previews list immediate children using the active search
-scope's relative-path filters and visibility rules. Enter
-on a directory browses into it and clears only Query. Alt-Left restores the prior
-mode, scope, settings, selection, and preview position when available.
+In Normal mode (press `Esc`), `f` selects Files and `d` selects Directories.
+`Space f` and `Space d` also work. Both use the same fuzzy path queries, filters,
+Hidden, and Ignored settings. Directory previews list immediate children using
+the active search scope's relative-path filters and visibility rules. Enter on
+a directory browses into it and clears only Query. `H` or `Space u` in Normal
+browses to the parent of the current search scope, clearing only Query and keeping
+the search mode, filters, and toggles. At filesystem root, it shows “Already at root.”
+`Space b` in Normal restores the prior mode, scope, settings, selection, and
+preview position when available.
 
-`Space c` selects Contents mode: queries match literal text on individual lines by
-default. `Space r` toggles Regex. Queries use smart case in both settings. Filters
-keep their independent regex and case rules. An empty content query shows guidance
+`c` or `Space c` in Normal selects Contents mode: queries match literal text on
+individual lines by default. `Space r` toggles Regex. Queries use smart case in
+both settings. Filters keep their independent regex and case rules. An empty content query shows guidance
 without scanning. Dirpick groups matching lines by file with 1-based line numbers.
 Source previews show every matching span and begin near the selected line.
 Mode changes keep Query, Include, Exclude, scope, Regex, Hidden, and Ignored.
@@ -77,7 +80,9 @@ are independent. Changing fields with Tab keeps the current input mode.
 | Normal | Space | Open the shortcut guide |
 | Normal | q or Space q | Quit |
 | Normal | j / k | Select the next / previous result |
-| Normal | Space f / Space d / Space c | Select Files / Directories / Contents |
+| Normal | f / d / c or Space f / Space d / Space c | Select Files / Directories / Contents |
+| Normal | H or Space u | Browse to the parent directory and clear only Query |
+| Normal | Space b | Restore the previous scope, fields, toggles, selection, and preview position |
 | Normal | Space r | Toggle content Regex and retain it when changing search modes |
 | Normal | Space s | Switch Project / launch CWD, retaining the query |
 | Normal | Space h | Reveal / hide dotfiles and dot directories |
@@ -91,21 +96,19 @@ are independent. Changing fields with Tab keeps the current input mode.
 | Insert | Ctrl-B | Move left by one character |
 | Insert | Ctrl-H / Ctrl-D | Delete the character before / after the cursor |
 | Insert | Ctrl-K | Delete from the cursor to the end of the field |
-| Insert | Alt-B / Alt-F or Ctrl-Left / Ctrl-Right | Move to the previous / next word |
-| Insert | Alt-Backspace | Delete the previous word using word boundaries |
-| Insert | Alt-D or Ctrl-Delete | Delete through the start of the next word |
+| Insert | Ctrl-Left / Ctrl-Right | Move to the previous / next word |
+| Insert | Ctrl-Delete | Delete through the start of the next word |
 | Insert | Left / Right / Home / End | Move the field cursor |
 | Either | Esc | Return to Normal, or close the shortcut guide or help |
 | Either | Enter | Open the selected file or content line in the configured editor |
 | Either | Enter on a directory | Browse inside Dirpick and clear only Query |
 | Either | Enter in Scope | Apply a directory and clear only Query |
 | Either | Ctrl-G | cd & exit for a directory through the Nushell wrapper |
-| Either | Up / Down | Select a result |
+| Either | Ctrl-P / Ctrl-N or Up / Down | Select the previous / next result without changing the focused field or input mode |
 | Either | PageUp / PageDown | Scroll the preview independently |
 | Either | Ctrl-Y | Send the exact selected absolute path through OSC 52 and keep searching |
 | Either | Tab / Shift-Tab | Cycle Query, Include, Exclude, and Scope |
 | Either | Ctrl-F / Ctrl-L | Focus Query / Scope and enter Insert |
-| Either | Alt-Left | Restore the previous scope, fields, toggles, selection, and preview position |
 | Either | Ctrl-C | Quit |
 
 Relative scope paths resolve against the active scope. Invalid paths retain the
@@ -125,9 +128,11 @@ The interface supports terminals of at least 70 columns and 18 rows. Below
 that size, Normal-mode `Space ?` opens basic help. Ctrl-C still exits.
 Set `NO_COLOR` to use terminal default colors with selection markers and attributes.
 Field editing uses `tui-input`; cursor positioning uses Unicode terminal display
-widths. Word movement and Alt deletion use Unicode word boundaries. Ctrl-W uses
+widths. Ctrl-arrow movement and Ctrl-Delete use Unicode word boundaries. Ctrl-W uses
 whitespace boundaries, so a path such as `src/main.rs` is one word. Ctrl-F and
 Ctrl-L retain their field-focus bindings; Ctrl-Y retains path copying.
+Dirpick leaves Alt combinations unbound for terminal and window-manager shortcuts.
+From Insert, press `Esc H` to browse the parent or `Esc Space b` to restore history.
 Source clipping keeps complete graphemes, including joined emoji, and measures
 their composed display width. Syntax and match ranges retain raw UTF-8 offsets;
 a match inside a composed grapheme highlights the complete glyph.
