@@ -29,3 +29,14 @@ fn query_redraw_keeps_intermediate_cursor_movements_hidden() {
         .expect("python3 is required for the Linux PTY cursor check");
     assert!(status.success());
 }
+
+#[test]
+fn shell_editing_shortcuts_update_fields_and_search_results() {
+    let status = std::process::Command::new("python3")
+        .arg("-B")
+        .arg("tests/pty_editing.py")
+        .arg(env!("CARGO_BIN_EXE_dirpick"))
+        .status()
+        .expect("python3 is required for the Linux PTY field editing check");
+    assert!(status.success());
+}

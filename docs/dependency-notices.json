@@ -1344,6 +1344,18 @@
     ]
   },
   {
+    "name": "tui-input",
+    "version": "0.15.5",
+    "license_expression": "MIT",
+    "repository": "https://github.com/sayanarijit/tui-input",
+    "notices": [
+      {
+        "file": "LICENSE",
+        "sha256": "393e9f5a12c614e476ff7067b3fd330dc63304e92d6c3762fa9120cedc7e6b9c"
+      }
+    ]
+  },
+  {
     "name": "unicode-ident",
     "version": "1.0.27",
     "license_expression": "(MIT OR Apache-2.0) AND Unicode-3.0",

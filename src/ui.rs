@@ -3,7 +3,7 @@ use crate::{
     preview::display_text,
     session::{Command, PreviewSpan, ScopePreset, SearchMode, SearchSession},
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -11,6 +11,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
+use tui_input::{Input, InputRequest, backend::crossterm::to_input_request};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -28,72 +29,57 @@ enum InputMode {
 }
 #[derive(Default)]
 struct Field {
-    text: String,
-    cursor: usize,
+    input: Input,
 }
 impl Field {
     fn set(&mut self, text: String) {
-        self.cursor = text.len();
-        self.text = text;
+        self.input = Input::new(text);
+    }
+    fn text(&self) -> &str {
+        self.input.value()
+    }
+    fn cursor_byte(&self) -> usize {
+        self.text()
+            .char_indices()
+            .nth(self.input.cursor())
+            .map_or(self.text().len(), |(index, _)| index)
     }
     fn edit(&mut self, key: KeyEvent) -> bool {
-        match key.code {
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.text.clear();
-                self.cursor = 0;
-            }
-            KeyCode::Char(character)
-                if !key
-                    .modifiers
-                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-            {
-                self.text.insert(self.cursor, character);
-                self.cursor += character.len_utf8();
-            }
-            KeyCode::Backspace => {
-                if let Some((previous, _)) = self.text[..self.cursor].char_indices().next_back() {
-                    self.text.drain(previous..self.cursor);
-                    self.cursor = previous;
-                }
-            }
-            KeyCode::Delete => {
-                if let Some(character) = self.text[self.cursor..].chars().next() {
-                    self.text
-                        .drain(self.cursor..self.cursor + character.len_utf8());
-                }
-            }
-            KeyCode::Left => {
-                self.cursor = self.text[..self.cursor]
-                    .char_indices()
-                    .next_back()
-                    .map_or(0, |(index, _)| index);
-                return false;
-            }
-            KeyCode::Right => {
-                self.cursor += self.text[self.cursor..]
-                    .chars()
-                    .next()
-                    .map_or(0, char::len_utf8);
-                return false;
-            }
-            KeyCode::Home => {
-                self.cursor = 0;
-                return false;
-            }
-            KeyCode::End => {
-                self.cursor = self.text.len();
-                return false;
-            }
-            _ => return false,
+        let request = match (key.code, key.modifiers) {
+            (KeyCode::Char('w'), KeyModifiers::CONTROL) => return self.delete_previous_word(),
+            (KeyCode::Char('b'), KeyModifiers::ALT) => Some(InputRequest::GoToPrevWord),
+            (KeyCode::Char('f'), KeyModifiers::ALT) => Some(InputRequest::GoToNextWord),
+            (KeyCode::Char('d'), KeyModifiers::ALT) => Some(InputRequest::DeleteNextWord),
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(InputRequest::DeleteNextChar),
+            _ => to_input_request(&Event::Key(key)),
+        };
+        request
+            .and_then(|request| self.input.handle(request))
+            .is_some_and(|changed| changed.value)
+    }
+    fn delete_previous_word(&mut self) -> bool {
+        // The tty's Ctrl-W treats paths and punctuation as part of a word.
+        // tui-input's word requests use Unicode word boundaries instead.
+        let cursor = self.cursor_byte();
+        let start = self.text()[..cursor]
+            .trim_end()
+            .trim_end_matches(|character: char| !character.is_whitespace())
+            .len();
+        if start == cursor {
+            return false;
         }
+        let mut text = self.text().to_owned();
+        text.replace_range(start..cursor, "");
+        let cursor = text[..start].chars().count();
+        self.input = Input::new(text).with_cursor(cursor);
         true
     }
     fn visible(&self, width: usize) -> (String, usize) {
-        let before = display_text(&self.text[..self.cursor]);
+        let before = display_text(&self.text()[..self.cursor_byte()]);
         let mut skip = before.width().saturating_sub(width.saturating_sub(1));
         let mut visible = String::new();
         let mut removed = 0;
-        let displayed = Span::raw(display_text(&self.text));
+        let displayed = Span::raw(display_text(self.text()));
         for grapheme in displayed.styled_graphemes(Style::default()) {
             let cells = grapheme.symbol.width();
             if skip > 0 {
@@ -112,6 +98,7 @@ impl Field {
         )
     }
 }
+
 struct Theme {
     no_color: bool,
     base: Style,
@@ -283,13 +270,13 @@ impl Workbench {
             self.sync(session);
             self.observed_scope = session.state().settings.scope.clone();
         } else {
-            if self.query.text != session.state().settings.query {
+            if self.query.text() != session.state().settings.query {
                 self.query.set(session.state().settings.query.clone());
             }
-            if self.include.text != session.state().settings.include {
+            if self.include.text() != session.state().settings.include {
                 self.include.set(session.state().settings.include.clone());
             }
-            if self.exclude.text != session.state().settings.exclude {
+            if self.exclude.text() != session.state().settings.exclude {
                 self.exclude.set(session.state().settings.exclude.clone());
             }
         }
@@ -428,7 +415,7 @@ impl Workbench {
             KeyCode::PageDown => session.command(Command::PagePreview(1)),
             KeyCode::Enter if self.focus == Focus::Scope => {
                 self.applying_scope = Some(session.state().generation);
-                session.command(Command::ApplyScope(self.scope.text.clone().into()));
+                session.command(Command::ApplyScope(self.scope.text().into()));
             }
             KeyCode::Enter => session.command(Command::OpenSelected),
             _ if self.input_mode == InputMode::Insert => self.edit_field(session, key),
@@ -445,9 +432,13 @@ impl Workbench {
         };
         if field.edit(key) {
             match self.focus {
-                Focus::Query => session.command(Command::SetQuery(self.query.text.clone())),
-                Focus::Include => session.command(Command::SetInclude(self.include.text.clone())),
-                Focus::Exclude => session.command(Command::SetExclude(self.exclude.text.clone())),
+                Focus::Query => session.command(Command::SetQuery(self.query.text().to_owned())),
+                Focus::Include => {
+                    session.command(Command::SetInclude(self.include.text().to_owned()))
+                }
+                Focus::Exclude => {
+                    session.command(Command::SetExclude(self.exclude.text().to_owned()))
+                }
                 Focus::Scope => {}
             }
         }
@@ -459,7 +450,7 @@ impl Workbench {
         if area.width < 70 || area.height < 18 {
             frame.render_widget(
                 Paragraph::new(if self.help {
-                    "Keyboard help · Esc close · Ctrl-C quit\nNORMAL: i Insert · / edit Query · Space shortcuts\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down select · q / Ctrl-C quit\nSpace f Files · Space d Directories · Space c Contents\nSpace r Regex · Space s Project/CWD · Space p Pane\nSpace h Hidden · Space i Ignored · Space ? Help\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nCtrl-U clear · arrows/Home/End edit in Insert\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview"
+                    "Keyboard help · Esc close · Ctrl-C quit\nNORMAL: i Insert · / edit Query · Space shortcuts\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down select · q / Ctrl-C quit\nSpace f Files · Space d Directories · Space c Contents\nSpace r Regex · Space s Project/CWD · Space p Pane\nSpace h Hidden · Space i Ignored · Space ? Help\nTab / Shift-Tab fields · Ctrl-F Query · Ctrl-L Scope\nInsert: Ctrl-W word · Ctrl-U clear · Ctrl-K to end\nCtrl-A/E start/end · Ctrl-B left · Ctrl-H/D delete\nAlt-B/F words · Alt-D delete word · Ctrl-arrows words\nEnter browse/editor · Alt-Left Back · Ctrl-G cd & exit\nCtrl-Y copy · PageUp/PageDown preview"
                 } else if self.input_mode == InputMode::Insert {
                     "dirpick · Resize terminal to at least 70×18\nINSERT · Type normally · Esc Normal · Ctrl-C quit"
                 } else {
@@ -794,7 +785,7 @@ impl Workbench {
                 }
             }
             let help = format!(
-                "Esc close help · Ctrl-C quit · PgUp/Dn scroll\nNORMAL: i edit focused field · / edit Query\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down: select · q: quit\nSpace: shortcut guide in Normal\nSpace f / d / c: Files / Directories / Contents\nSpace r: toggle content Regex\nSpace s: Project / immutable launch CWD\nSpace h / i: reveal Hidden / Ignored independently\nSpace p: Results/Preview below 100 columns\nSpace /: edit Query · Space ?: help · Space q: quit\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: edit Query / Scope in Insert\nInsert Ctrl-U: clear; Left/Right/Home/End: edit\nPageUp/PageDown preview · Ctrl-Y: exact path via OSC 52\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nEnter browse/editor in either mode · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
+                "Esc close help · Ctrl-C quit · PgUp/Dn scroll\nNORMAL: i edit focused field · / edit Query\nINSERT: type normally, including spaces · Esc Normal\nNormal j/k or Up/Down: select · q: quit\nSpace: shortcut guide in Normal\nSpace f / d / c: Files / Directories / Contents\nSpace r: toggle content Regex\nSpace s: Project / immutable launch CWD\nSpace h / i: reveal Hidden / Ignored independently\nSpace p: Results/Preview below 100 columns\nSpace /: edit Query · Space ?: help · Space q: quit\nTab / Shift-Tab: Query, Include, Exclude, Scope\nCtrl-F / Ctrl-L: edit Query / Scope in Insert\nInsert: Ctrl-W previous whitespace-delimited word\nCtrl-U clear field · Ctrl-K delete to end\nCtrl-A / Ctrl-E start / end · Ctrl-B left\nCtrl-H / Ctrl-D delete before / after cursor\nAlt-B / Alt-F or Ctrl-Left / Right: word movement\nAlt-Backspace: delete previous word\nAlt-D / Ctrl-Delete: delete to next word\nLeft/Right/Home/End: edit field cursor\nPageUp/PageDown preview · Ctrl-Y: exact path via OSC 52\nInclude/Exclude: relative path regex, smart case\nEnter in Scope: apply path · Alt-Left Back\nEnter browse/editor in either mode · Ctrl-G cd & exit\n\nCurrent feedback (Home/End jump):\n{}",
                 feedback.join("\n")
             );
             let mut lines = Vec::new();
@@ -1197,5 +1188,45 @@ impl Workbench {
             }
         }
         spans
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field_with_cursor(marked: &str) -> Field {
+        let (before, after) = marked.split_once('|').unwrap();
+        Field {
+            input: Input::new(format!("{before}{after}")).with_cursor(before.chars().count()),
+        }
+    }
+
+    #[test]
+    fn ctrl_w_deletes_whitespace_then_the_previous_word_at_the_cursor() {
+        for (before, after) in [
+            ("|", "|"),
+            ("|word", "|word"),
+            ("   |tail", "|tail"),
+            ("one| two", "| two"),
+            ("one two|", "one |"),
+            ("one two   |", "one |"),
+            ("one \t two|", "one \t |"),
+            ("one path/to-file.rs|", "one |"),
+            ("한글 café 😀 |tail", "한글 café |tail"),
+            ("one tw|o three", "one |o three"),
+            ("one\u{2003}two|", "one\u{2003}|"),
+            ("cafe\u{301}|", "|"),
+        ] {
+            let mut field = field_with_cursor(before);
+            field.edit(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
+            let expected = field_with_cursor(after);
+            assert_eq!(field.text(), expected.text(), "input: {before:?}");
+            assert_eq!(
+                field.cursor_byte(),
+                expected.cursor_byte(),
+                "input: {before:?}"
+            );
+        }
     }
 }

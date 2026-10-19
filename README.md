@@ -86,6 +86,14 @@ are independent. Changing fields with Tab keeps the current input mode.
 | Normal | Space ? | Show keyboard help and full feedback |
 | Insert | Text, including Space | Edit the focused field |
 | Insert | Ctrl-U | Clear the focused field |
+| Insert | Ctrl-W | Delete the previous whitespace-delimited word and any trailing whitespace |
+| Insert | Ctrl-A / Ctrl-E | Move to the start / end of the field |
+| Insert | Ctrl-B | Move left by one character |
+| Insert | Ctrl-H / Ctrl-D | Delete the character before / after the cursor |
+| Insert | Ctrl-K | Delete from the cursor to the end of the field |
+| Insert | Alt-B / Alt-F or Ctrl-Left / Ctrl-Right | Move to the previous / next word |
+| Insert | Alt-Backspace | Delete the previous word using word boundaries |
+| Insert | Alt-D or Ctrl-Delete | Delete through the start of the next word |
 | Insert | Left / Right / Home / End | Move the field cursor |
 | Either | Esc | Return to Normal, or close the shortcut guide or help |
 | Either | Enter | Open the selected file or content line in the configured editor |
@@ -116,7 +124,10 @@ displayed range.
 The interface supports terminals of at least 70 columns and 18 rows. Below
 that size, Normal-mode `Space ?` opens basic help. Ctrl-C still exits.
 Set `NO_COLOR` to use terminal default colors with selection markers and attributes.
-Field editing and cursor positioning use Unicode terminal display widths.
+Field editing uses `tui-input`; cursor positioning uses Unicode terminal display
+widths. Word movement and Alt deletion use Unicode word boundaries. Ctrl-W uses
+whitespace boundaries, so a path such as `src/main.rs` is one word. Ctrl-F and
+Ctrl-L retain their field-focus bindings; Ctrl-Y retains path copying.
 Source clipping keeps complete graphemes, including joined emoji, and measures
 their composed display width. Syntax and match ranges retain raw UTF-8 offsets;
 a match inside a composed grapheme highlights the complete glyph.

@@ -6,6 +6,7 @@ description = "A terminal workbench for finding and previewing paths"
 
 [dependencies]
 crossterm = "=0.29.0"
+tui-input = { version = "=0.15.5", default-features = false, features = ["crossterm"] }
 ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm_0_29"] }
 ignore = "=0.4.25"
 regex = "=1.13.1"
