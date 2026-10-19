@@ -15,7 +15,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-preview-") as root:
 
     picker = Picker(binary, root, 70, 18)
     try:
-        picker.send("/source.txt", "Results · 1")
+        picker.send("source.txt", "Results · 1")
         picker.send(b"\x1b", " NORMAL ")
         picker.send(b" p", "source-001")
         picker.wait("source-005")

@@ -239,7 +239,7 @@ impl Workbench {
     pub fn new(session: &SearchSession) -> Self {
         let mut ui = Self {
             focus: Focus::Query,
-            input_mode: InputMode::Normal,
+            input_mode: InputMode::Insert,
             query: Field::default(),
             include: Field::default(),
             exclude: Field::default(),

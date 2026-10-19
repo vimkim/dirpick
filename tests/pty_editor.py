@@ -59,6 +59,7 @@ sys.exit(7 if os.environ['EDITOR_TEST_MODE'] in ('exit', 'raw') else 0)
         try:
             wait_for("Results · 1")
             if mode not in ("files", "generic"):
+                send(b"\x1b", " NORMAL ")
                 send(b" c", "Type a content query")
                 send(b"ineedle", "needle 251")
                 wait_for("needle 260")

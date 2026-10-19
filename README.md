@@ -14,7 +14,7 @@ Launch inside a Git working tree to search its Project root, including linked
 worktrees and submodules. Outside Git, Project uses the launch directory.
 The visible Project/CWD preset remains distinct when both paths are equal.
 
-Press `/` and type whitespace-separated fuzzy path fragments in Query. Uppercase
+Type whitespace-separated fuzzy path fragments directly in Query. Uppercase
 characters make the query case-sensitive. Exact basenames rank before basename prefixes,
 then other fuzzy matches. An empty query lists files in relative-path order.
 
@@ -25,9 +25,10 @@ never prevents traversal into a directory that could have matching descendants.
 An invalid pattern marks its field, explains the error, and clears stale results
 until you fix the pattern. Validation also applies to empty queries and directories.
 
-`Space f` selects Files and `Space d` selects Directories. Both use the same fuzzy
-path queries, filters, Hidden, and Ignored settings. Directory previews list
-immediate children using the active search scope's relative-path filters and visibility rules. Enter
+In Normal mode (press `Esc`), `Space f` selects Files and `Space d` selects
+Directories. Both use the same fuzzy path queries, filters, Hidden, and Ignored
+settings. Directory previews list immediate children using the active search
+scope's relative-path filters and visibility rules. Enter
 on a directory browses into it and clears only Query. Alt-Left restores the prior
 mode, scope, settings, selection, and preview position when available.
 
@@ -52,11 +53,12 @@ Directory browsing and Nushell integration follow the
 
 ## Keys
 
-Dirpick starts in **Normal** mode. Press **i** to edit the focused field, or **/**
-to focus and edit Query. In **Insert** mode, type normally, including spaces.
-**Esc** returns to Normal. The footer shows a colored **NORMAL** or **INSERT**
-badge and the keys available in that mode. Esc also closes the guide or help;
-it never quits the application. Use **q** in Normal or **Ctrl-C** to quit.
+Dirpick starts in **Insert** mode with Query focused, so you can type immediately,
+including spaces. **Esc** returns to Normal. In Normal, press **i** to edit the
+focused field, or **/** to focus and edit Query. The footer shows a colored
+**NORMAL** or **INSERT** badge and the keys available in that mode. Esc also closes
+the guide or help; it never quits the application. Use **q** in Normal or **Ctrl-C**
+to quit.
 
 In Normal, press **Space** to open the shortcut guide, then a listed key to act.
 The header always shows Files, Directories, and Contents with their shortcut

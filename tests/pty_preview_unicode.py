@@ -13,6 +13,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-unicode-preview-") as root:
     picker = Picker(binary, root, 70, 18)
     try:
         picker.wait("unicode.txt")
+        picker.send(b"\x1b", " NORMAL ")
         picker.send(b" p", "Lines 1–2/2")
         # Ten composed families use 20 cells, leaving ample room for TAIL
         # within the 61 source cells at 70×18. Inspect the terminal bytes so

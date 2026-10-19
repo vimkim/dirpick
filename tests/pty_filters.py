@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-filters-") as root:
             wait_for("Hidden:off")
             wait_for("Ignored:off")
             wait_for("kept.rs")
-            send(b"i\t[", "Invalid include regex")
+            send(b"\t[", "Invalid include regex")
             wait_for("kept.rs", absent=True)
             send(b"\x15\\.rs$", "kept.rs")
             send(b"\tkept", "No matching files")

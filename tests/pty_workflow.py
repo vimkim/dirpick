@@ -16,6 +16,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, root, 70, 18)
     try:
         picker.wait("source.rs")
+        picker.send(b"\x1b", " NORMAL ")
         picker.resize(60, 12)
         picker.wait("Resize terminal")
         picker.send(b" ?", "Keyboard help")
@@ -34,6 +35,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, viewport_root, 70, 18)
     try:
         picker.wait("context.rs")
+        picker.send(b"\x1b", " NORMAL ")
         picker.send(b" cineedle", "Results · 1")
         picker.send(b"\x1b", " NORMAL ")
         picker.send(b" p", "selected needle 260")
@@ -49,6 +51,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, memory_root, 70, 18)
     try:
         picker.wait("minified.txt")
+        picker.send(b"\x1b", " NORMAL ")
         picker.send(b" cix", "PARTIAL")
         picker.wait("16 MiB")
         picker.send(b"\x1b", " NORMAL ")
@@ -65,6 +68,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, root, 70, 18)
     try:
         picker.wait("source.rs")
+        picker.send(b"\x1b", " NORMAL ")
         picker.send(b" cilimit", "PARTIAL")  # Contents, row retention limit
         picker.send(b"\x1b", " NORMAL ")
         picker.wait("Space Shortcuts")
@@ -87,6 +91,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-workflow-") as root:
     picker = Picker(binary, error_root, 70, 18)
     try:
         picker.wait("dirpick")
+        picker.send(b"\x1b", " NORMAL ")
         picker.send(b" cineedle", "1 errors")
         picker.send(b"\x1b", " NORMAL ")
         picker.wait("Space Shortcuts")
@@ -136,7 +141,7 @@ input()
         preview_pane = False
         try:
             picker.wait("[Project]")
-            picker.send("ineedle", "Query needle")
+            picker.send("needle", "Query needle")
             picker.send("\t\\.rs$", "Include \\.rs$")
             picker.send("\ttop", "Exclude top")
             picker.wait("Results · 1")
@@ -235,7 +240,7 @@ input()
         picker = Picker(binary, launch, columns, rows, ["--json"])
         try:
             picker.wait("dirpick")
-            picker.send(b"ineedle")
+            picker.send(b"needle")
             picker.send(b"\x1b", " NORMAL ")
             picker.send(b" ci\x15context")
             picker.send(b"\x1b", " NORMAL ")

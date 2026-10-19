@@ -31,6 +31,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-dirs-") as root:
         wait_for, send = picker.wait, picker.send
         try:
             wait_for("dirpick")
+            send(b"\x1b", " NORMAL ")
             send(b" d", "[d Directories]")  # Space d
             if columns < 100:
                 send(b" p", "visible-child.txt")  # Space p preview

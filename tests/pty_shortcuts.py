@@ -19,9 +19,13 @@ with tempfile.TemporaryDirectory(prefix="dirpick-shortcuts-") as root:
         try:
             picker.wait("[f Files]")
             header = picker.screen.text().splitlines()[0]
-            for label in ("f Files", "d Directories", "c Contents", "Space Shortcuts"):
+            for label in ("f Files", "d Directories", "c Contents", "Esc Normal mode"):
                 assert label in header, header
-            picker.wait(" NORMAL ")
+            picker.wait(" INSERT ")
+            picker.send("two words", "Query two words")  # Startup accepts text immediately.
+            picker.send(b"\x15", "Query two words", absent=True)
+            picker.send(b"\x1b", " NORMAL ")
+            picker.wait("Space Shortcuts")
             picker.wait("q Quit")
             picker.send("x", "Query x", absent=True)  # Normal typing cannot edit fields.
             picker.send(" ", "Space → Shortcuts")

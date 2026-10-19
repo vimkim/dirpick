@@ -27,7 +27,8 @@ with tempfile.TemporaryDirectory(prefix="dirpick-pty-") as root:
             assert b"\x1b[?1049h" in output
             if columns >= 100:
                 assert re.search(rb"38;2;203;166;247", output), "Rust syntax keyword was not colored"
-            os.write(master, b"ino-such-file")
+            os.write(master, b"no-such-file")
+            wait_for(b"Query no-such-file")
             wait_for(b"No matching files")
             os.write(master, b"\x15needle")
             wait_for(b"Query needle")

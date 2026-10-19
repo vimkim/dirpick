@@ -66,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="dirpick-cursor-") as root:
     picker = Picker(binary, root, 120, 32)
     try:
         picker.wait("needle.rs")
-        picker.send(b"i", " INSERT ")
+        picker.wait(" INSERT ")
 
         def edit(keys, text, offset=0, label="Query", result=None):
             start = len(picker.output)
